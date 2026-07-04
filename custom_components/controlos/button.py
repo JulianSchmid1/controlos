@@ -1,0 +1,44 @@
+"""ControlOS - Buttons je Bereich (Phasen-Override speichern/zuruecksetzen)."""
+from __future__ import annotations
+
+from homeassistant.components.button import ButtonEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import BUTTON_PARAMS, DOMAIN
+from .entity_base import area_slug, device_info_for
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+):
+    async_add_entities(
+        ControlosButton(entry, key, cfg) for key, cfg in BUTTON_PARAMS.items())
+
+
+class ControlosButton(ButtonEntity):
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry, key: str, cfg: dict):
+        self._entry = entry
+        self._key = key
+        self._attr_unique_id = "%s_%s" % (entry.entry_id, key)
+        self._attr_name = cfg.get("name") or key
+        self._attr_icon = cfg.get("icon")
+        self.entity_id = "button.controlos_%s_%s" % (area_slug(entry.title), key)
+
+    @property
+    def device_info(self):
+        return device_info_for(self._entry)
+
+    async def async_press(self) -> None:
+        coord = (self.hass.data.get(DOMAIN, {})
+                 .get(self._entry.entry_id, {}).get("coordinator"))
+        if coord is None:
+            return
+        if self._key == "phase_override_speichern":
+            await coord.async_save_override()
+        elif self._key == "phase_override_reset":
+            await coord.async_reset_override()

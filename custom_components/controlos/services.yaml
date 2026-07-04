@@ -1,0 +1,22 @@
+add_area:
+  name: Bereich hinzufügen
+  description: Legt einen neuen ControlOS-Grow-Bereich an (leer, mit Standardwerten).
+  fields:
+    name:
+      name: Name
+      description: Anzeigename des neuen Bereichs.
+      required: true
+      example: Mutterzelt
+      selector:
+        text:
+
+remove_area:
+  name: Bereich entfernen
+  description: Löscht einen ControlOS-Bereich (Config-Entry) samt allen Entities.
+  fields:
+    entry_id:
+      name: Config-Entry-ID
+      description: Die Config-Entry-ID des zu löschenden Bereichs.
+      required: true
+      selector:
+        text:

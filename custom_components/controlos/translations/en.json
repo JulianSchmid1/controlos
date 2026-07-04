@@ -1,0 +1,20 @@
+{
+  "title": "ControlOS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "New ControlOS area",
+        "description": "Create a grow area. It starts empty with default settings; pick sensors and devices afterwards.",
+        "data": {
+          "name": "Area name"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Please enter a name."
+    },
+    "abort": {
+      "already_configured": "An area with this name already exists."
+    }
+  }
+}

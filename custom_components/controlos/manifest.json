@@ -1,0 +1,12 @@
+{
+  "domain": "controlos",
+  "name": "ControlOS",
+  "version": "0.1.0",
+  "documentation": "https://github.com/controlos/controlos",
+  "dependencies": [],
+  "codeowners": [],
+  "requirements": [],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "integration_type": "hub"
+}
