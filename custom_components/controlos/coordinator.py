@@ -605,19 +605,32 @@ class ControlosCoordinator(DataUpdateCoordinator):
             actual_on = (st is not None and st.state == "on")
             actual_ok = (st is not None
                          and st.state not in ("unavailable", "unknown"))
+            # Helligkeits-Drift: Soll-% gegen echten Dimmerwert pruefen
+            pct_ok = True
+            dim = want.get("dimmer_entity")
+            if (want["on"] and want.get("pct") is not None
+                    and dim and dim.startswith("light.")):
+                dst = self.hass.states.get(dim)
+                if dst is not None and dst.state == "on":
+                    b = dst.attributes.get("brightness")
+                    ist = round(b / 2.55) if b is not None else None
+                    pct_ok = ist is None or abs(ist - want["pct"]) <= 3
+                elif dst is not None and dst.state == "off":
+                    pct_ok = False
             sig = (want["entity"], want["on"], want.get("pct"), want.get("stufe"))
             same_cmd = self._last_dev.get(name) == sig
             # Ueberspringen nur, wenn Befehl unveraendert UND Realzustand passt
-            if same_cmd and (not actual_ok or actual_on == want["on"]):
+            if same_cmd and (not actual_ok or actual_on == want["on"]) and pct_ok:
                 continue
             if not same_cmd:
                 self._last_dev[name] = sig
-            elif actual_on != want["on"]:
+            elif actual_on != want["on"] or not pct_ok:
                 _LOGGER.warning(
-                    "[%s] %s extern verstellt (ist %s, soll %s) -> korrigiere",
+                    "[%s] %s extern verstellt (ist %s, soll %s%s) -> korrigiere",
                     self.entry.title, eid,
                     "an" if actual_on else "aus",
-                    "an" if want["on"] else "aus")
+                    "an" if want["on"] else "aus",
+                    " %d%%" % want["pct"] if want.get("pct") is not None else "")
             try:
                 svc = "turn_on" if want["on"] else "turn_off"
                 await self.hass.services.async_call(
