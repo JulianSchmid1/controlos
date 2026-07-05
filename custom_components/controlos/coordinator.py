@@ -527,6 +527,15 @@ class ControlosCoordinator(DataUpdateCoordinator):
         now = _time.time()
         vpd = data.get("data_vpd")
         slope = 0.0
+        # Tank voll: Klima-Dynamik ist untypisch (Entfeuchter zwangspausiert)
+        # -> weder Zeilen sammeln noch Prognosen ausgeben
+        tank_eid = ctx.sel("sensor_tank")
+        tank_voll = bool(tank_eid) and ctx.state(tank_eid) == "on"
+        if tank_voll:
+            data["ki_vpd_prognose"] = None
+            data["ki_status"] = ("pausiert (Tank voll) | %d Zeilen"
+                                 % self.ki.n_rows)
+            return
         if vpd is not None and data.get("data_temp_luft") is not None:
             # Steigung: VPD-Aenderung ueber ~5 Minuten
             self._vpd_hist.append((now, vpd))
