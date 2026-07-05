@@ -286,8 +286,29 @@ function monitorView(a, hass) {
               icon: "mdi:weather-sunset-down", show_state: true,
               show_background: true, tap_action: { action: "more-info" } },
           ] }),
-        bstate(D + "ziel_temp", "Ziel Temperatur", "mdi:target"),
-        bstate(D + "ziel_feuchte", "Ziel Feuchtigkeit", "mdi:target"),
+        // Ziel-Anzeige je Kontext: Tag+VPD-Modus -> Ziel-VPD (+ Ziel des
+        // massgebenden Faktors); nachts (statisch) -> Nacht-Temp/-Feuchte
+        ...(() => {
+          const tag = { condition: "state", entity: B + "ist_tag", state: "on" };
+          const nacht = { condition: "state", entity: B + "ist_tag", state_not: "on" };
+          const vpdM = { condition: "state", entity: sp + "klima_modus", state: "VPD" };
+          const keinVpd = { condition: "state", entity: sp + "klima_modus", state_not: "VPD" };
+          const prioT = { condition: "state", entity: sp + "prio", state: "temperatur" };
+          const prioF = { condition: "state", entity: sp + "prio", state: "feuchte" };
+          const und = (...c) => ({ condition: "and", conditions: c });
+          const oder = (...c) => [{ condition: "or", conditions: c }];
+          return [
+            Object.assign(
+              bstate("number.controlos_" + s + "_vpd_ziel", "Ziel VPD", "mdi:target"),
+              { visibility: [tag, vpdM] }),
+            Object.assign(
+              bstate(D + "ziel_temp", "Ziel Temperatur", "mdi:target"),
+              { visibility: oder(nacht, und(tag, keinVpd), und(tag, prioT)) }),
+            Object.assign(
+              bstate(D + "ziel_feuchte", "Ziel Feuchtigkeit", "mdi:target"),
+              { visibility: oder(nacht, und(tag, keinVpd), und(tag, prioF)) }),
+          ];
+        })(),
         sep("Grow-Kalender", "mdi:calendar-month"),
         (() => {
           const typSt = hass.states[sp + "grow_typ"];
