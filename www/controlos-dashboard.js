@@ -496,20 +496,23 @@ function kalenderView(a) {
     ] };
 }
 
+/* Einstellungs-Hub: Grundlegendes + Navigation zu den Themen-Unterseiten. */
 function configView(a) {
   const s = slug(a.title);
-  const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
+  const sp = "select.controlos_" + s + "_";
   const wp = "switch.controlos_" + s + "_", bp = "button.controlos_" + s + "_";
-  const nice = (k, pre) => k.split(pre).join("").split("_").join(" ");
+  const nav = (titel, untertitel, icon, farbe, pfad) => ({
+    type: "custom:mushroom-template-card", icon, icon_color: farbe,
+    primary: titel, secondary: untertitel,
+    tap_action: { action: "navigate",
+      navigation_path: "/" + DASH + "/bereich-" + s + "-" + pfad } });
   return { title: a.title + " · Einstellungen", path: "bereich-" + s + "-config",
     icon: "mdi:cog", subview: true, theme: THEME,
-    type: "sections", max_columns: 4, sections: [
+    type: "sections", max_columns: 2, sections: [
       { type: "grid", cards: [
         sep("Bereich", "mdi:sprout"),
         bsw(wp + "aktiv", a.title + " Aktiv", "mdi:power"),
         bsel(sp + "betriebsmodus", "Betriebsmodus (Monitor/Steuern)"),
-        bsel(sp + "klima_modus", "Klima Modus"),
-        bsel(sp + "system_modus", "System Modus"),
         sep("Wuchsphase & Grow", "mdi:sprout-outline"),
         bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
         bsel(sp + "wuchsphase", "Aktuelle Phase"),
@@ -518,12 +521,104 @@ function configView(a) {
           { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Startdatum" },
           { entity: bp + "phase_override_speichern", name: "Phase für diesen Bereich speichern" },
           { entity: bp + "phase_override_reset", name: "Phase auf Standard zurücksetzen" }] },
+      ] },
+      { type: "grid", cards: [
+        sep("Einstellungen", "mdi:tune"),
+        nav("Klima-Regelung", "Ziele, Steuermodi, AC, CO2, Lüfter, KI", "mdi:thermostat", "red", "klima"),
+        nav("Licht", "Zeitplan, Zyklus, Sonnenauf-/-untergang", "mdi:lightbulb-on", "amber", "licht"),
+        nav("Geräte & Sensoren", "Zuordnung, Dimmer, Quellen", "mdi:power-plug", "blue", "geraete"),
+        nav("System & Benachrichtigungen", "Watchdog, Speicher, Push", "mdi:bell-cog", "teal", "system"),
+        { type: "custom:controlos-delete-button", entry_id: a.entry_id,
+          area_name: a.title, redirect: "/" + DASH + "/einstellungen" },
+      ] },
+    ] };
+}
+
+/* Unterseite: Klima-Regelung */
+function klimaView(a) {
+  const s = slug(a.title);
+  const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_";
+  const co2vis = { visibility: [{ condition: "state",
+    entity: wp + "vorhanden_co2", state: "on" }] };
+  return { title: a.title + " · Klima", path: "bereich-" + s + "-klima",
+    icon: "mdi:thermostat", subview: true, theme: THEME,
+    type: "sections", max_columns: 4, sections: [
+      { type: "grid", cards: [
+        sep("Ziele & Toleranzen (aktuelle Phase)", "mdi:target"),
+        ...NUM_CLIMATE.map((k) => bslider(np + k, null)),
+        bslider(np + "blatt_offset", "Blatt-Offset (ohne Blattsensor)"),
+      ] },
+      { type: "grid", cards: [
+        sep("Steuermodi", "mdi:cog"),
+        bsel(sp + "klima_modus", "Klima Modus"),
+        bsel(sp + "system_modus", "System Modus"),
+        ...SEL_STEUER.map((k) => bsel(sp + k, null)),
+        sep("Optionen", "mdi:toggle-switch"),
+        ...SW_OPTIONS.map((k) => bsw(wp + k, null)),
+        sep("KI-Bias (gelernt)", "mdi:brain"),
+        ...["vpd_bias_tag", "vpd_bias_nacht", "temp_bias_tag",
+            "temp_bias_nacht", "hum_bias_tag", "hum_bias_nacht"]
+          .map((k) => bslider(np + k, null)),
+      ] },
+      { type: "grid", cards: [
+        sep("Klimaanlage (AC)", "mdi:air-conditioner"),
+        bslider(np + "klima_ziel_tag", "AC-Ziel Tag"),
+        bslider(np + "klima_ziel_nacht", "AC-Ziel Nacht"),
+        bsel(sp + "klima_modus_tag", "AC-Modus Tag"),
+        bsel(sp + "klima_modus_nacht", "AC-Modus Nacht"),
+        bsel(sp + "klima_fan_tag", "AC-Lüfter Tag"),
+        bsel(sp + "klima_fan_nacht", "AC-Lüfter Nacht"),
+        bslider(np + "klima_hybrid_gewicht", "Hybrid-Gewicht AC"),
+        Object.assign(sep("CO2-Steuerung", "mdi:molecule-co2"), co2vis),
+        Object.assign(bsw(wp + "co2_automatik", "CO2 Automatik", "mdi:robot-outline"), co2vis),
+        Object.assign(bsel(sp + "co2_betrieb_modus", "Betriebsart (Dauer/Intervall)"), co2vis),
+        Object.assign(bslider(np + "co2_dauer_min", "Dosier-Dauer"), co2vis),
+        Object.assign(bslider(np + "co2_intervall_min", "Intervall"), co2vis),
+        Object.assign(bslider(np + "co2_max_laufzeit_min", "Max-Laufzeit (Schutz)"), co2vis),
+      ] },
+      { type: "grid", cards: [
+        sep("Entfeuchter (Autonom/Hybrid)", "mdi:air-humidifier-off"),
+        bslider(np + "entfeuchter_autonom_ziel_tag", "Autonom-Ziel Tag"),
+        bslider(np + "entfeuchter_autonom_ziel_nacht", "Autonom-Ziel Nacht"),
+        bslider(np + "entfeuchter_hybrid_gewicht", "Hybrid-Gewicht"),
+        sep("Abluft", "mdi:fan"),
+        bsel(sp + "abluft_modus", "Abluft-Modus"),
+        bslider(np + "abluft_backup_temp", "Backup ab Temp"),
+        bslider(np + "abluft_backup_hum", "Backup ab Feuchte"),
+        bslider(np + "abluft_backup_vpd", "Backup ab VPD"),
+        bslider(np + "abluft_backup_co2", "Backup ab CO2"),
+        bslider(np + "abluft_backup_disarm_min", "Backup-Nachlauf"),
+        sep("Ventilator & Umluft", "mdi:fan-chevron-up"),
+        bsel(sp + "ventilator_modus", "Ventilator-Modus"),
+        bslider(np + "ventilator_speed", "Ventilator-Stufe"),
+        bslider(np + "ventilator_ein_min", "Ventilator Ein-Dauer"),
+        bslider(np + "ventilator_intervall_min", "Ventilator Intervall"),
+        bsel(sp + "umluft_modus", "Umluft-Modus"),
+        bslider(np + "umluft_ein_min", "Umluft Ein-Dauer"),
+        bslider(np + "umluft_intervall_min", "Umluft Intervall"),
+        bslider(np + "dimm_mindestleistung", "Dimm-Mindestleistung"),
+      ] },
+    ] };
+}
+
+/* Unterseite: Licht */
+function lichtView(a) {
+  const s = slug(a.title);
+  const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_";
+  return { title: a.title + " · Licht", path: "bereich-" + s + "-licht",
+    icon: "mdi:lightbulb-on", subview: true, theme: THEME,
+    type: "sections", max_columns: 2, sections: [
+      { type: "grid", cards: [
         sep("Licht-Zeitplan", "mdi:lightbulb-on-outline"),
         bsel(sp + "licht_zyklus", "Lichtzyklus (Ende folgt automatisch)"),
         { type: "entities", entities: [
           { entity: "time.controlos_" + s + "_licht_start", name: "Licht an um" },
           { entity: "time.controlos_" + s + "_licht_ende", name: "Licht aus um (bei Zyklus automatisch)" }] },
-        bslider(np + "licht_helligkeit", "Licht Helligkeit (dimmbar)"),
+        bslider(np + "licht_helligkeit", "Zielhelligkeit (dimmbar)"),
+      ] },
+      { type: "grid", cards: [
         sep("Sonnenauf-/-untergang (dimmbar)", "mdi:weather-sunset"),
         bsel(sp + "licht_modus", "Schaltmodus (An/Aus oder Rampe)"),
         bslider(np + "sunrise_dauer", "Sonnenaufgang Dauer"),
@@ -532,47 +627,74 @@ function configView(a) {
           bsw(wp + "undercanopy_als_sonne", "Undercanopy als Sonnenauf-/-untergang", "mdi:weather-sunset"),
           { visibility: [{ condition: "state",
             entity: wp + "vorhanden_undercanopy", state: "on" }] }),
-        sep("Klima-Ziele & Toleranzen (aktuelle Phase)", "mdi:target"),
-        ...NUM_CLIMATE.map((k) => bslider(np + k, null)),
+      ] },
+    ] };
+}
+
+/* Unterseite: Geräte & Sensoren */
+function geraeteView(a) {
+  const s = slug(a.title);
+  const sp = "select.controlos_" + s + "_", wp = "switch.controlos_" + s + "_";
+  const DIMMBAR = ["befeuchter", "entfeuchter", "heizung", "abluft",
+    "licht", "undercanopy", "ventilator"];
+  return { title: a.title + " · Geräte", path: "bereich-" + s + "-geraete",
+    icon: "mdi:power-plug", subview: true, theme: THEME,
+    type: "sections", max_columns: 4, sections: [
+      { type: "grid", cards: [
+        sep("Geräte vorhanden?", "mdi:devices"),
+        ...SW_VORHANDEN.map((k) => bsw(wp + k, null)),
       ] },
       { type: "grid", cards: [
-        sep("Steuermodi", "mdi:cog"),
-        ...SEL_STEUER.map((k) => bsel(sp + k, null)),
+        sep("Geräte-Zuordnung", "mdi:power-plug"),
+        ...SEL_GERAET.map((k) => Object.assign(bsel(sp + k, null),
+          { visibility: [{ condition: "state",
+            entity: wp + "vorhanden_" + k.replace("geraet_", "").replace("co2_ventil", "co2"),
+            state: "on" }] })),
+      ] },
+      { type: "grid", cards: [
+        sep("Dimmbar?", "mdi:brightness-6"),
+        ...DIMMBAR.map((d) => Object.assign(bsw(wp + "dimmbar_" + d, null),
+          { visibility: [{ condition: "state",
+            entity: wp + "vorhanden_" + d, state: "on" }] })),
+        sep("Dual-Geräte (können Gegenteil)", "mdi:swap-horizontal"),
+        bsw(wp + "dual_befeuchter", null),
+        bsw(wp + "dual_entfeuchter", null),
+      ] },
+      { type: "grid", cards: [
+        sep("Dimmer-Zuordnung", "mdi:tune-vertical"),
+        ...DIMMBAR.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
+          { visibility: [{ condition: "state",
+            entity: wp + "dimmbar_" + d, state: "on" }] })),
         sep("Sensoren (Quellen)", "mdi:access-point"),
         ...SEL_SENSOR.map((k) => bsel(sp + k, null)),
+        bsel(sp + "sensor_entfeuchter", "Geräte-Feuchtesensor (Entfeuchter)"),
+        bsel(sp + "sensor_tank", "Tank-Sensor (voll)"),
+        bsel(sp + "stufe_entfeuchter", "Lüfterstufe Entfeuchter"),
+      ] },
+    ] };
+}
+
+/* Unterseite: System & Benachrichtigungen */
+function systemView(a) {
+  const s = slug(a.title);
+  const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_";
+  return { title: a.title + " · System", path: "bereich-" + s + "-system",
+    icon: "mdi:bell-cog", subview: true, theme: THEME,
+    type: "sections", max_columns: 2, sections: [
+      { type: "grid", cards: [
         sep("Sensor-Watchdog", "mdi:restart-alert"),
         bsw(wp + "mqtt_watchdog", "MQTT-Broker neu starten bei Sensor-Ausfall", "mdi:restart-alert"),
         bslider(np + "mqtt_watchdog_min", "Nach X Minuten ohne Daten"),
         sep("Speicher & KI", "mdi:database"),
         bsel(sp + "speicherzeit", "Speicherzeit Messdaten (KI-Archiv)"),
-        ...(() => {
-          const vis = { visibility: [{ condition: "state",
-            entity: wp + "vorhanden_co2", state: "on" }] };
-          return [
-            Object.assign(sep("CO2-Steuerung", "mdi:molecule-co2"), vis),
-            Object.assign(bsw(wp + "co2_automatik", "CO2 Automatik", "mdi:robot-outline"), vis),
-            Object.assign(bsel(sp + "co2_betrieb_modus", "Betriebsart (Dauer/Intervall)"), vis),
-            Object.assign(bslider(np + "co2_dauer_min", "Dosier-Dauer"), vis),
-            Object.assign(bslider(np + "co2_intervall_min", "Intervall"), vis),
-            Object.assign(bslider(np + "co2_max_laufzeit_min", "Max-Laufzeit (Schutz)"), vis),
-          ];
-        })(),
+        bstate("sensor.controlos_" + s + "_ki_status", "KI Status", "mdi:brain"),
       ] },
       { type: "grid", cards: [
-        sep("Geräte vorhanden?", "mdi:devices"),
-        ...SW_VORHANDEN.map((k) => bsw(wp + k, null)),
-        sep("Optionen", "mdi:toggle-switch"),
-        ...SW_OPTIONS.map((k) => bsw(wp + k, null)),
         sep("Benachrichtigungen", "mdi:bell"),
         bsw(wp + "benachrichtigungen", "Push + HA-Meldung (Tank, CO2, Sensor, Notizen)", "mdi:bell"),
         bsel(sp + "benachrichtigung_ziel", "Ziel-Gerät (Push)"),
         bslider(np + "co2_alarm_max", "CO2-Alarm ab"),
-      ] },
-      { type: "grid", cards: [
-        sep("Geräte-Zuordnung", "mdi:power-plug"),
-        ...SEL_GERAET.map((k) => bsel(sp + k, null)),
-        { type: "custom:controlos-delete-button", entry_id: a.entry_id,
-          area_name: a.title, redirect: "/" + DASH + "/einstellungen" },
       ] },
     ] };
 }
@@ -597,6 +719,10 @@ class ControlosDashboardStrategy {
     for (const a of areas) views.push(graphenView(a));
     for (const a of areas) views.push(kalenderView(a));
     for (const a of areas) views.push(configView(a));
+    for (const a of areas) views.push(klimaView(a));
+    for (const a of areas) views.push(lichtView(a));
+    for (const a of areas) views.push(geraeteView(a));
+    for (const a of areas) views.push(systemView(a));
     views.push(stdPhaseView());
     return { title: "ControlOS", views,
       kiosk_mode: { hide_search: true, hide_assistant: true,
