@@ -491,7 +491,12 @@ function kalenderView(a) {
         { type: "todo-list", entity: "todo.controlos_" + s + "_notizen",
           hide_completed: false },
         { type: "markdown", content:
-          "Einträge mit **Fälligkeitsdatum** dienen als Erinnerung (z. B. „Spülen ab…“, „Ernte prüfen“)." },
+          "Einträge mit **Fälligkeitsdatum** werden als Push gemeldet — Häufigkeit per Steuerwort " +
+          "im Titel oder der Beschreibung:\n\n" +
+          "- *(ohne)* → **einmalig** am Fälligkeitstag\n" +
+          "- `!täglich` → jeden Tag, bis abgehakt\n" +
+          "- `!wöchentlich` → alle 7 Tage\n" +
+          "- `!stumm` → keine Benachrichtigung" },
       ] },
     ] };
 }
@@ -556,10 +561,8 @@ function klimaView(a) {
         ...SEL_STEUER.map((k) => bsel(sp + k, null)),
         sep("Optionen", "mdi:toggle-switch"),
         ...SW_OPTIONS.map((k) => bsw(wp + k, null)),
-        sep("KI-Bias (gelernt)", "mdi:brain"),
-        ...["vpd_bias_tag", "vpd_bias_nacht", "temp_bias_tag",
-            "temp_bias_nacht", "hum_bias_tag", "hum_bias_nacht"]
-          .map((k) => bslider(np + k, null)),
+        sep("KI-Bias (nur VPD, tagsüber)", "mdi:brain"),
+        bslider(np + "vpd_bias_tag", "VPD-Bias Tag (gelernt)"),
       ] },
       { type: "grid", cards: [
         sep("Klimaanlage (AC)", "mdi:air-conditioner"),

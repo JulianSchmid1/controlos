@@ -109,6 +109,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         self._ki_cleanup_ts = 0.0
         self._alerts: dict = {}        # Alarm-Key -> zuletzt gemeldet (ts)
         self._alert_on: dict = {}      # Alarm-Key -> aktueller Zustand
+        self._dev_track: dict = {}     # geraet_*-Select -> zuletzt zugewiesen
 
     # -- Zugriff --
     def _ents(self):
@@ -180,6 +181,12 @@ class ControlosCoordinator(DataUpdateCoordinator):
             await self._mqtt_watchdog(ctx)
         except Exception:  # noqa: BLE001
             _LOGGER.exception("MQTT-Watchdog")
+
+        # -- Geraetewechsel: Schalt-/Lernzustand des alten Geraets verwerfen --
+        try:
+            await self._geraetewechsel(ctx, ents)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Gerätewechsel")
 
         # -- abgeleitete Werte --
         temp_luft = self._source(ctx, "sensor_temp_luft")
@@ -366,6 +373,42 @@ class ControlosCoordinator(DataUpdateCoordinator):
         return data
 
     # ------------------------------------------------------------------
+    _WECHSEL_RESET = {
+        "geraet_befeuchter":  ("befeuchter",  ["bef"], True),
+        "geraet_entfeuchter": ("entfeuchter", ["ent", "ent_sm"], True),
+        "geraet_klima":       ("klima", ["cool", "kdry", "kcool", "kheat",
+                                         "rt_klima_mode"], True),
+        "geraet_heizung":     ("heizung", ["heat"], False),
+        "geraet_co2_ventil":  ("co2", ["co2"], False),
+        "geraet_abluft":      ("abluft", ["abluft", "abluft_backup"], False),
+        "geraet_ventilator":  ("ventilator", [], False),
+        "geraet_umluft":      ("umluft", [], False),
+        "geraet_licht":       ("licht", [], False),
+        "geraet_undercanopy": ("undercanopy", [], False),
+    }
+
+    async def _geraetewechsel(self, ctx, ents) -> None:
+        for selkey, (name, latches, ki_reset) in self._WECHSEL_RESET.items():
+            eid = ctx.sel(selkey)
+            alt = self._dev_track.get(selkey)
+            if selkey in self._dev_track and alt != eid:
+                self.regler.reset_device(latches)
+                self._last_dev.pop(name, None)
+                _LOGGER.info("[%s] Gerätewechsel %s: %s → %s — Schaltzustand "
+                             "zurückgesetzt", self.entry.title, name,
+                             alt or "-", eid or "-")
+                if ki_reset:
+                    e = ents.get("vpd_bias_tag")
+                    if e is not None:
+                        try:
+                            await e.async_set_native_value(0.0)
+                            _LOGGER.info("[%s] KI-VPD-Bias nach Gerätewechsel "
+                                         "auf 0 gesetzt", self.entry.title)
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.exception("Bias-Reset")
+            self._dev_track[selkey] = eid
+
+    # ------------------------------------------------------------------
     async def _benachrichtigen(self, ctx, data) -> None:
         """Alarme (Tank/CO2/Sensor) + faellige Notizen melden.
 
@@ -415,6 +458,19 @@ class ControlosCoordinator(DataUpdateCoordinator):
                             name, co2, co2_max))
         self._alert_on["co2"] = zu_hoch
 
+        # Zugewiesene Geraete ausgefallen (unavailable/unknown)
+        for selkey, (gname, _l, _k) in self._WECHSEL_RESET.items():
+            geid = ctx.sel(selkey)
+            defekt = bool(geid) and ctx.state(geid) in (None, "unavailable",
+                                                        "unknown")
+            akey = "dev_%s" % gname
+            if defekt and not self._alert_on.get(akey):
+                await melde(akey, "⚠️ ControlOS: Gerät ausgefallen",
+                            "[%s] %s (%s) ist nicht mehr erreichbar — "
+                            "Regelung behandelt es als nicht vorhanden." % (
+                                name, gname.capitalize(), geid))
+            self._alert_on[akey] = defekt
+
         # Klimasensor liefert nichts mehr
         ausfall = (bool(ctx.sel("sensor_temp_luft"))
                    and data.get("data_temp_luft") is None)
@@ -424,23 +480,45 @@ class ControlosCoordinator(DataUpdateCoordinator):
                         "MQTT-Watchdog kümmert sich, bitte prüfen." % name)
         self._alert_on["sensor"] = ausfall
 
-        # Faellige Notizen (je Eintrag einmal pro Tag)
+        # Faellige Notizen. Steuerwoerter in Titel/Beschreibung:
+        #   (nichts)      -> einmalig am Faelligkeitstag
+        #   !täglich      -> jeden Tag erinnern, bis erledigt
+        #   !wöchentlich  -> alle 7 Tage
+        #   !stumm        -> nie benachrichtigen
         store = self._store()
         if store:
-            heute = date.today().isoformat()
+            heute = date.today()
+            heute_iso = heute.isoformat()
             items = store.todos(self.entry.entry_id)
             geaendert = False
             for t in items:
-                if (t.get("status") != "completed" and t.get("due")
-                        and t["due"] <= heute
-                        and t.get("erinnert_am") != heute):
-                    await melde("todo_%s" % t.get("uid"),
-                                "📝 ControlOS: Erinnerung",
-                                "[%s] %s (fällig %s)" % (
-                                    name, t.get("summary"), t["due"]),
-                                cooldown=0)
-                    t["erinnert_am"] = heute
-                    geaendert = True
+                if (t.get("status") == "completed" or not t.get("due")
+                        or t["due"] > heute_iso):
+                    continue
+                text = ("%s %s" % (t.get("summary") or "",
+                                   t.get("description") or "")).lower()
+                if "!stumm" in text:
+                    continue
+                letzte = t.get("erinnert_am")
+                if "!täglich" in text or "!taeglich" in text:
+                    faellig_erneut = letzte != heute_iso
+                elif "!wöchentlich" in text or "!woechentlich" in text:
+                    try:
+                        tage = (heute - date.fromisoformat(letzte)).days
+                    except (TypeError, ValueError):
+                        tage = 99
+                    faellig_erneut = tage >= 7
+                else:
+                    faellig_erneut = letzte is None  # einmalig
+                if not faellig_erneut:
+                    continue
+                await melde("todo_%s" % t.get("uid"),
+                            "📝 ControlOS: Erinnerung",
+                            "[%s] %s (fällig %s)" % (
+                                name, t.get("summary"), t["due"]),
+                            cooldown=0)
+                t["erinnert_am"] = heute_iso
+                geaendert = True
             if geaendert:
                 store.set_todos(self.entry.entry_id, items)
 

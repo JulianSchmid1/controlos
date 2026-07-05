@@ -80,6 +80,12 @@ class Regler:
     def _mark(self, key):
         self._last_sw[key] = time.time()
 
+    def reset_device(self, latch_keys) -> None:
+        """Schaltgedaechtnis eines Geraets verwerfen (nach Geraetewechsel)."""
+        for k in latch_keys:
+            self._latch.pop(k, None)
+            self._last_sw.pop(k, None)
+
     def pair_hyst(self, ka, kb, val, lo, hi, target, nz,
                   a_present, b_present, a_dual, b_dual, force_off=False):
         both = a_present and b_present
@@ -125,7 +131,13 @@ class Regler:
 
     # ------------------------------------------------------------------
     def ki_bias(self, ctx, eff_modus, ist_tag, sys_modus, tank_voll,
-                temp, hum, vpd, ziel_temp, ziel_hum, vpd_ziel, bias_out):
+                vpd, vpd_ziel, bias_out):
+        """Adaptiver Bias - AUSSCHLIESSLICH fuer die VPD-Tagsteuerung.
+
+        Nachts (statische Regelung) und im Feuchte-Modus wird weder gelernt
+        noch angewendet; bei vollem Entfeuchter-Tank stoppt das Rechnen
+        (eingefrorener Wert wird tagsueber weiter angewendet). Die frueheren
+        Temp-/Feuchte-Biases sind abgeschafft und zerfallen gegen 0."""
         ki_active = ctx.sw("ki_modus") and sys_modus == "Geschlossenes System"
 
         def dec(v, minstep, nd):
@@ -138,30 +150,24 @@ class Regler:
             if abs(val - bget(m, ph)) > 1e-6:
                 bias_out["%s_bias_%s" % (m, ph)] = val
 
-        ph = "tag" if ist_tag else "nacht"
-        vb, tb, hb = bget("vpd", ph), bget("temp", ph), bget("hum", ph)
+        # Ausgediente Biases (Temp/Feuchte + Nacht-VPD) kontinuierlich abbauen
+        for p in ("tag", "nacht"):
+            bput("temp", p, dec(bget("temp", p), 0.1, 1))
+            bput("hum", p, dec(bget("hum", p), 0.5, 1))
+        bput("vpd", "nacht", dec(bget("vpd", "nacht"), 0.01, 3))
 
+        vb = bget("vpd", "tag")
         if not ki_active:
-            for p in ("tag", "nacht"):
-                bput("vpd", p, dec(bget("vpd", p), 0.01, 3))
-                bput("temp", p, dec(bget("temp", p), 0.1, 1))
-                bput("hum", p, dec(bget("hum", p), 0.5, 1))
-            return dec(vb, 0.01, 3), dec(tb, 0.1, 1), dec(hb, 0.5, 1)
-        if tank_voll:
-            return vb, tb, hb
-        if eff_modus == "VPD" and vpd is not None:
-            vb = max(-0.4, min(0.4, round(vb + 0.008 * (vpd_ziel - vpd), 3)))
-            tb, hb = dec(tb, 0.1, 1), dec(hb, 0.5, 1)
-        else:
-            if temp is not None:
-                tb = max(-3.0, min(3.0, round(tb + 0.0042 * (ziel_temp - temp), 2)))
-            if hum is not None:
-                hb = max(-15.0, min(15.0, round(hb + 0.0071 * (ziel_hum - hum), 2)))
             vb = dec(vb, 0.01, 3)
-        bput("vpd", ph, vb)
-        bput("temp", ph, tb)
-        bput("hum", ph, hb)
-        return vb, tb, hb
+            bput("vpd", "tag", vb)
+            return vb if (ist_tag and eff_modus == "VPD") else 0.0
+        if not ist_tag or eff_modus != "VPD":
+            return 0.0  # Nacht/Statisch & Feuchte-Modus: Bias komplett aussen vor
+        if tank_voll or vpd is None:
+            return vb   # Rechnen gestoppt, eingefrorener Wert gilt weiter
+        vb = max(-0.4, min(0.4, round(vb + 0.008 * (vpd_ziel - vpd), 3)))
+        bput("vpd", "tag", vb)
+        return vb
 
     # ------------------------------------------------------------------
     def dev_out(self, ctx, on, d_main, dimmbar_key, dimmer_key, dim, pmin,
@@ -347,8 +353,25 @@ class Regler:
         if modus == "VPD" and not ist_tag and ctx.sw("nacht_statisch"):
             eff_modus = "Statisch (Nacht)"
 
-        bef_da, ent_da = d_bef is not None, d_ent is not None
-        heiz_da, klima_da = d_heiz is not None, d_klima is not None
+        # Geraete-Ausfall: zugewiesen, aber nicht erreichbar -> wie "nicht
+        # vorhanden" behandeln (verfaelscht sonst Regelung und KI wie ein
+        # voller Tank). Meldung uebernimmt der Coordinator.
+        def geraet_ok(eid):
+            return bool(eid) and ctx.state(eid) not in (None, "unavailable",
+                                                        "unknown")
+        ausgefallen = {}
+        for gname, geid in (("befeuchter", d_bef), ("entfeuchter", d_ent),
+                            ("heizung", d_heiz), ("klima", d_klima),
+                            ("co2", d_co2), ("abluft", d_abluft),
+                            ("ventilator", d_vent), ("umluft", d_umluft),
+                            ("licht", d_licht)):
+            if geid and not geraet_ok(geid):
+                ausgefallen[gname] = geid
+
+        bef_da = d_bef is not None and "befeuchter" not in ausgefallen
+        ent_da = d_ent is not None and "entfeuchter" not in ausgefallen
+        heiz_da = d_heiz is not None and "heizung" not in ausgefallen
+        klima_da = d_klima is not None and "klima" not in ausgefallen
         bef_dual = ctx.sw("dual_befeuchter")
         ent_dual = ctx.sw("dual_entfeuchter")
 
@@ -356,12 +379,13 @@ class Regler:
         tank_eid = ctx.sel("sensor_tank")
         tank_voll = bool(tank_eid and ctx.state(tank_eid) == "on")
 
-        # KI-Bias
-        vb, tb, hb = self.ki_bias(ctx, eff_modus, ist_tag, sys_modus, tank_voll,
-                                  temp, hum, vpd, ziel_temp, ziel_hum, vpd_ziel,
-                                  bias_out)
-        ziel_temp += tb
-        ziel_hum += hb
+        # KI-Bias: verschiebt NUR den VPD-Korridor am Tag; Temp-/Feuchteziele
+        # (insbesondere die statische Nachtregelung) bleiben unangetastet.
+        # Rechnen stoppt bei vollem Tank ODER ausgefallenem Feuchte-Aktor.
+        ki_stopp = (tank_voll or "befeuchter" in ausgefallen
+                    or "entfeuchter" in ausgefallen)
+        vb = self.ki_bias(ctx, eff_modus, ist_tag, sys_modus, ki_stopp,
+                          vpd, vpd_ziel, bias_out)
         vpd_min += vb
         vpd_max += vb
         vpd_ziel += vb
@@ -683,7 +707,12 @@ class Regler:
             else:
                 shadow["umluft"] = "AN (%s) -> %s" % (umluft_mode, d_umluft)
 
-        ki_status = (" | KI %+.2f/%+.1f/%+.1f" % (vb, tb, hb)) if ctx.sw("ki_modus") else ""
+        # Ausgefallene Geraete: nicht ansteuern + deutlich markieren
+        for gname, geid in ausgefallen.items():
+            devices.pop(gname, None)
+            shadow[gname] = "⚠️ AUSGEFALLEN -> %s" % geid
+
+        ki_status = (" | KI-VPD %+.2f" % vb) if (ctx.sw("ki_modus") and vb) else ""
         phase = ctx.sel_raw("wuchsphase") or "-"
         shadow["status"] = (
             "[%s] %s%s | %s | %s | %s -> %s | %s -> %s | CO2 %s -> %s%s" % (

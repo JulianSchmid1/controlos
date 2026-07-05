@@ -99,7 +99,11 @@ class ControlosTodo(TodoListEntity):
         items = self._items()
         for i, d in enumerate(items):
             if d.get("uid") == item.uid:
-                items[i] = _to_dict(item)
+                neu = _to_dict(item)
+                # Erinnerungs-Merker behalten, ausser das Datum wurde geaendert
+                if neu.get("due") == d.get("due") and d.get("erinnert_am"):
+                    neu["erinnert_am"] = d["erinnert_am"]
+                items[i] = neu
                 break
         self._save(items)
 
