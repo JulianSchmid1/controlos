@@ -367,6 +367,9 @@ function monitorView(a, hass) {
             "if (out.length && !isNaN(v)) out.unshift([Date.now(), v]);" +
             "return out;";
           return { type: "custom:apexcharts-card",
+            // Chart nur zeigen, wenn die echte KI eingeschaltet ist
+            visibility: [{ condition: "state",
+              entity: wp + "ki_engine", state: "on" }],
             grid_options: { columns: "full" },
             header: { show: true, title: "VPD: Ist & KI-Prognose",
               show_states: true, colorize_states: true },
