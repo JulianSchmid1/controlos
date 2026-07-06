@@ -295,18 +295,24 @@ function monitorView(a, hass) {
           const keinVpd = { condition: "state", entity: sp + "klima_modus", state_not: "VPD" };
           const prioT = { condition: "state", entity: sp + "prio", state: "temperatur" };
           const prioF = { condition: "state", entity: sp + "prio", state: "feuchte" };
+          const statAn = { condition: "state", entity: wp + "nacht_statisch", state: "on" };
+          const statAus = { condition: "state", entity: wp + "nacht_statisch", state_not: "on" };
           const und = (...c) => ({ condition: "and", conditions: c });
-          const oder = (...c) => [{ condition: "or", conditions: c }];
+          const oder = (...c) => ({ condition: "or", conditions: c });
+          // VPD-Steuerung aktiv: VPD-Modus und (Tag ODER nachts ohne Statik)
+          const vpdAktiv = und(vpdM, oder(tag, statAus));
+          // Statische Regelung aktiv: kein VPD-Modus ODER (Nacht + Statik an)
+          const statischAktiv = oder(keinVpd, und(nacht, statAn));
           return [
             Object.assign(
               bstate("number.controlos_" + s + "_vpd_ziel", "Ziel VPD", "mdi:target"),
-              { visibility: [tag, vpdM] }),
+              { visibility: [vpdAktiv] }),
             Object.assign(
               bstate(D + "ziel_temp", "Ziel Temperatur", "mdi:target"),
-              { visibility: oder(nacht, und(tag, keinVpd), und(tag, prioT)) }),
+              { visibility: [oder(statischAktiv, und(vpdAktiv, prioT))] }),
             Object.assign(
               bstate(D + "ziel_feuchte", "Ziel Feuchtigkeit", "mdi:target"),
-              { visibility: oder(nacht, und(tag, keinVpd), und(tag, prioF)) }),
+              { visibility: [oder(statischAktiv, und(vpdAktiv, prioF))] }),
           ];
         })(),
         sep("Grow-Kalender", "mdi:calendar-month"),
