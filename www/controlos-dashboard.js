@@ -758,16 +758,17 @@ function lichtView(a) {
   const V = (c, ...conds) => Object.assign(c, { visibility: conds });
   const lichtVis = { visibility: [cOn(wp + "vorhanden_licht")] };
   const LV = (c) => Object.assign(c, lichtVis);
-  // Dimm-/Rampen-Sichtbarkeit richtet sich nach der ECHTEN Abhaengigkeit:
-  // Zielhelligkeit + Sonnenauf-/-untergangsdauern nutzt auch die
-  // "Undercanopy als Sonne"-Funktion, nicht nur das Hauptlicht.
+  // Dimmbar-Bedingungen
   const dl = cOn(wp + "dimmbar_licht");                 // Hauptlicht dimmbar
-  const duc = cAnd(cOn(wp + "vorhanden_undercanopy"),
-                   cOn(wp + "dimmbar_undercanopy"));    // UC dimmbar
-  const anyDim = cOr(dl, duc);                          // irgendetwas dimmbar
-  const mainRamp = cAnd(dl, cEq(sp + "licht_modus", "Sunrise/Sunset"));
-  const ucSun = cAnd(duc, cOn(wp + "undercanopy_als_sonne"));
-  const anyRamp = cOr(mainRamp, ucSun);                // Rampe irgendwo aktiv
+  const dvUc = cOn(wp + "vorhanden_undercanopy");       // UC vorhanden
+  const duc = cAnd(dvUc, cOn(wp + "dimmbar_undercanopy")); // UC dimmbar
+  const anyDim = cOr(dl, duc);                          // irgendein Licht dimmbar
+  // Sonnenaufgang ist moeglich, wenn das Hauptlicht dimmbar ist ODER eine UC
+  // vorhanden ist (dimmbar = echte Rampe, sonst gestuft: UC an, dann Hauptlicht).
+  const sunriseOk = cOr(dl, dvUc);
+  // Der Schaltmodus ist der MASTER: alle Sonnenauf-/-untergangs-Optionen
+  // haengen nur an dieser Auswahl.
+  const sonne = cEq(sp + "licht_modus", "Sonnenauf-/-untergang");
   return { title: a.title + " · Licht", path: "bereich-" + s + "-licht",
     icon: "mdi:lightbulb-on", subview: true, theme: THEME,
     type: "sections", max_columns: 2, sections: [
@@ -779,19 +780,24 @@ function lichtView(a) {
         LV({ type: "entities", entities: [
           { entity: "time.controlos_" + s + "_licht_start", name: "Licht an um" },
           { entity: "time.controlos_" + s + "_licht_ende", name: "Licht aus um (bei Zyklus automatisch)" }] }),
+        // Zielhelligkeit nur, wenn irgendein Licht (Haupt oder UC) dimmbar ist
         V(bslider(np + "licht_helligkeit", "Zielhelligkeit (dimmbar)"), anyDim),
+        // Undercanopy-Dimmung: gehoert zu den Licht-Einstellungen
+        V(sep("Undercanopy dimmen", "mdi:lightbulb-group"), dvUc),
+        V(bsw(wp + "dimmbar_undercanopy", "Undercanopy dimmbar?", "mdi:brightness-6"), dvUc),
+        V(bsel(sp + "dimmer_undercanopy", "Dimmer: Undercanopy"), duc),
       ] },
       { type: "grid", cards: [
-        V(sep("Sonnenauf-/-untergang (dimmbar)", "mdi:weather-sunset"), anyDim),
-        // Schaltmodus nur wenn das Hauptlicht ueberhaupt dimmen kann
-        V(bsel(sp + "licht_modus", "Schaltmodus (An/Aus oder Rampe)"), dl),
-        // Rampendauern nur wenn irgendwo eine Rampe laeuft (Hauptlicht im
-        // Sunrise/Sunset-Modus ODER Undercanopy als Sonne)
-        V(bslider(np + "sunrise_dauer", "Sonnenaufgang Dauer"), anyRamp),
-        V(bslider(np + "sunset_dauer", "Sonnenuntergang Dauer"), anyRamp),
-        // UC-als-Sonne nur wenn die Undercanopy vorhanden UND dimmbar ist
+        // Schaltmodus (Master) nur, wenn Sonnenaufgang ueberhaupt moeglich ist
+        V(sep("Schaltmodus", "mdi:weather-sunset"), sunriseOk),
+        V(bsel(sp + "licht_modus", "Ein/Aus oder Sonnenauf-/-untergang"), sunriseOk),
+        // Sonnenauf-/-untergangs-Einstellungen NUR im Sonnen-Modus:
+        V(bslider(np + "sunrise_dauer", "Sonnenaufgang Dauer"), sonne),
+        V(bslider(np + "sunset_dauer", "Sonnenuntergang Dauer"), sonne),
+        // UC als Sonne: im Sonnen-Modus, sobald eine UC vorhanden ist
+        // (dimmbar = Rampe, nicht dimmbar = gestufter Sonnenaufgang)
         V(bsw(wp + "undercanopy_als_sonne", "Undercanopy als Sonnenauf-/-untergang",
-              "mdi:weather-sunset"), duc),
+              "mdi:weather-sunset"), sonne, dvUc),
       ] },
     ] };
 }
@@ -803,6 +809,8 @@ function geraeteView(a) {
   const np = "number.controlos_" + s + "_";
   const DIMMBAR = ["befeuchter", "entfeuchter", "heizung", "abluft",
     "licht", "undercanopy", "ventilator"];
+  // Undercanopy-Dimmung liegt bei den Licht-Einstellungen, nicht hier
+  const DIMMBAR_UI = DIMMBAR.filter((d) => d !== "undercanopy");
   // Mindestleistung ist nur relevant, wenn ueberhaupt ein Geraet dimmbar ist
   const anyDimmbar = { condition: "or", conditions: DIMMBAR.map((d) =>
     ({ condition: "state", entity: wp + "dimmbar_" + d, state: "on" })) };
@@ -822,7 +830,7 @@ function geraeteView(a) {
       ] },
       { type: "grid", cards: [
         sep("Dimmbar?", "mdi:brightness-6"),
-        ...DIMMBAR.map((d) => Object.assign(bsw(wp + "dimmbar_" + d, null),
+        ...DIMMBAR_UI.map((d) => Object.assign(bsw(wp + "dimmbar_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "vorhanden_" + d, state: "on" }] })),
         sep("Dual-Geräte (können Gegenteil)", "mdi:swap-horizontal"),
@@ -831,7 +839,7 @@ function geraeteView(a) {
       ] },
       { type: "grid", cards: [
         sep("Dimmer-Zuordnung", "mdi:tune-vertical"),
-        ...DIMMBAR.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
+        ...DIMMBAR_UI.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "dimmbar_" + d, state: "on" }] })),
         Object.assign(bslider(np + "dimm_mindestleistung",

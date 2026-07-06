@@ -295,20 +295,33 @@ class Regler:
         uc_dimmer = ctx.sel("dimmer_undercanopy")
         uc_dimmbar = bool(ctx.sw("dimmbar_undercanopy") and uc_dimmer)
 
-        # --- Undercanopy als Sonne: UC faehrt die Rampe, Hauptlicht nur im Kern ---
-        if uc_als_sonne and d_uc and uc_dimmbar:
-            uc_pct = self._ramp_pct(since, until, sunrise, sunset, hell) if in_win else 0
-            uc_on = in_win and uc_pct > 0
+        # Sonnenauf-/-untergangs-Modus ist der Master: nur dann rampt ueberhaupt
+        # etwas (weder UC-als-Sonne noch Hauptlicht-Rampe bei "An/Aus").
+        sonne = l_modus == "Sonnenauf-/-untergang"
+
+        # --- Undercanopy als Sonne: UC uebernimmt den Sonnenaufgang, Hauptlicht
+        # kommt erst nach der Aufgangszeit (Kern). Dimmbare UC faehrt eine echte
+        # Rampe; nicht dimmbare UC geht einfach an -> gestufter Sonnenaufgang. ---
+        if sonne and uc_als_sonne and d_uc:
+            if uc_dimmbar:
+                uc_pct = self._ramp_pct(since, until, sunrise, sunset, hell) if in_win else 0
+                uc_on = in_win and uc_pct > 0
+            else:
+                uc_pct, uc_on = None, in_win  # nicht dimmbar -> voll an im Fenster
             devices["undercanopy"] = {"entity": d_uc, "on": bool(uc_on),
-                                      "pct": uc_pct if uc_on else None,
-                                      "dimmer_entity": uc_dimmer,
+                                      "pct": uc_pct if (uc_on and uc_dimmbar) else None,
+                                      "dimmer_entity": uc_dimmer if uc_dimmbar else None,
                                       "stufe": None, "stufe_entity": None}
-            phase_uc = ("Aufgang" if in_win and since < sunrise else
-                        ("Untergang" if in_win and until < sunset else
-                         ("Tag" if in_win else "Nacht")))
-            shadow["undercanopy"] = "%s %d%% (%s) -> %s" % (
-                phase_uc, uc_pct, _fenster, uc_dimmer) if uc_on else \
-                "AUS (%s) -> %s" % (_fenster, d_uc)
+            if uc_dimmbar:
+                phase_uc = ("Aufgang" if in_win and since < sunrise else
+                            ("Untergang" if in_win and until < sunset else
+                             ("Tag" if in_win else "Nacht")))
+                shadow["undercanopy"] = "%s %d%% (%s) -> %s" % (
+                    phase_uc, uc_pct, _fenster, uc_dimmer) if uc_on else \
+                    "AUS (%s) -> %s" % (_fenster, d_uc)
+            else:
+                shadow["undercanopy"] = ("AN (Sonne, %s) -> %s" % (_fenster, d_uc)) \
+                    if uc_on else "AUS (%s) -> %s" % (_fenster, d_uc)
             # Hauptlicht: an erst wenn Aufgang fertig, aus sobald Untergang startet
             kern_on = in_win and since >= sunrise and until >= sunset
             if d_licht:
@@ -326,7 +339,7 @@ class Regler:
         # --- Sonst: Hauptlicht selbst (An/Aus oder eigene Sunrise/Sunset-Rampe) ---
         else:
             if d_licht:
-                if l_modus == "Sunrise/Sunset" and l_dimmbar:
+                if sonne and l_dimmbar:
                     l_pct = self._ramp_pct(since, until, sunrise, sunset, hell) if in_win else 0
                     l_on = in_win and l_pct > 0
                     devices["licht"] = {"entity": d_licht, "on": bool(l_on),

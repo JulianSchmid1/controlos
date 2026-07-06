@@ -153,7 +153,7 @@ for _d in _DIMMBAR:
 SELECT_PARAMS = {
     "betriebsmodus":   {"name": "Betriebsmodus", "icon": "mdi:shield-check", "options": ["Monitor", "Steuern"], "default": "Monitor"},
     "licht_zyklus":    {"name": "Lichtzyklus", "icon": "mdi:sun-clock", "options": ["Manuell", "24/0", "20/4", "18/6", "16/8", "14/10", "12/12", "10/14"], "default": "18/6"},
-    "licht_modus":     {"name": "Licht Schaltmodus", "icon": "mdi:weather-sunset", "options": ["An/Aus", "Sunrise/Sunset"], "default": "An/Aus"},
+    "licht_modus":     {"name": "Licht Schaltmodus", "icon": "mdi:weather-sunset", "options": ["An/Aus", "Sonnenauf-/-untergang"], "default": "An/Aus"},
     "klima_modus":     {"name": "Klima Modus",     "icon": "mdi:thermostat", "options": ["VPD", "Statisch"], "default": "VPD"},
     "system_modus":    {"name": "System Modus",    "icon": "mdi:tent", "options": ["Geschlossenes System", "Offenes System"], "default": "Geschlossenes System"},
     "klima_steuermodus": {"name": "Klima Steuermodus", "icon": "mdi:tune", "options": ["Area-Sensor", "Geräte-Sensor", "Hybrid", "Autonom"], "default": "Autonom"},
