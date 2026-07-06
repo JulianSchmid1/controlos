@@ -376,15 +376,34 @@ function monitorView(a, hass) {
         bstate(G + "ki_status", "KI Status", "mdi:brain"),
       ] },
       (() => {
-        const nav = { action: "navigate",
-          navigation_path: "/" + DASH + "/graphen-" + s };
+        const zr = sp + "graph_zeitraum";
         const byKey = {};
         for (const d of graphDefs(s)) byKey[d[0]] = d;
+        const gIcons = { temp: "mdi:thermometer", hum: "mdi:water-percent",
+          vpd: "mdi:water-opacity", co2: "mdi:molecule-co2", blatt: "mdi:leaf",
+          zutemp: "mdi:home-import-outline", zuhum: "mdi:home-import-outline" };
+        // Tap auf einen Graphen -> Einzel-Popup (nur DIESER Graph, gross)
         const tile = (k, extraVis) => {
           const [, name, dec, ents] = byKey[k];
-          const c = mg(name, dec, ents, { tap_action: nav });
+          const c = mg(name, dec, ents, { tap_action: { action: "navigate",
+            navigation_path: "#graph-" + s + "-" + k } });
           if (extraVis) c.visibility = extraVis;
           return c;
+        };
+        const popup = (k) => {
+          const [, name, dec, ents] = byKey[k];
+          const cards = [applyDesign({ type: "custom:bubble-card",
+            card_type: "select", entity: zr, name: "Zeitachse",
+            card_layout: "large" })];
+          for (const [opt, hours, pph] of GRAPH_RANGES) {
+            cards.push(Object.assign(
+              mg(name, dec, ents, { hours_to_show: hours,
+                points_per_hour: pph, height: 260,
+                show: { legend: true, fill: "fade" } }),
+              { visibility: [{ condition: "state", entity: zr, state: opt }] }));
+          }
+          return { type: "custom:bubble-card", card_type: "pop-up",
+            name, icon: gIcons[k], hash: "#graph-" + s + "-" + k, cards };
         };
         return { type: "grid", column_span: 2, cards: [
           sep("Klima (" + a.title + ")", "mdi:tent"),
@@ -396,6 +415,7 @@ function monitorView(a, hass) {
             ] }] }),
           tile("zutemp", [{ condition: "state", entity: sp + "sensor_temp_zuluft", state_not: "Keine" }]),
           tile("zuhum", [{ condition: "state", entity: sp + "sensor_feuchte_zuluft", state_not: "Keine" }]),
+          ...Object.keys(byKey).map(popup),
         ] };
       })(),
       { type: "grid", column_span: 2, cards: [
