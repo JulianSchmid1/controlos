@@ -467,17 +467,26 @@ function monitorView(a, hass) {
                   ".bubble-sub-button-" + fIdx + " { background-color: #3b82f6 !important; }\n" +
                   ".bubble-sub-button-" + fIdx + " ha-icon { color: #fff !important; }\n";
               }
+              // Lüfterstärke nur zeigen, wenn der Entfeuchter tatsächlich läuft
+              // (reales Gerät an UND Tank nicht voll)
+              if (sIdx) {
+                const laeuft = tankEid
+                  ? "is_state('" + real + "','on') and not is_state('" + tankEid + "','on')"
+                  : "is_state('" + real + "','on')";
+                extraCss += ".bubble-sub-button-" + sIdx +
+                  " { display: {{ 'flex' if (" + laeuft + ") else 'none' }} !important; }\n";
+              }
               if (tankEid) {
-                // Tank voll: Stufe+Feuchte ausblenden, roten "Tank Voll!" zeigen
+                // Tank voll: Feuchte ausblenden, roten "Tank Voll!" zeigen
+                // (die Stufe haengt ohnehin am Laufzustand)
                 subs.push({ entity: tankEid, name: "Tank Voll!",
                   show_name: true, icon: "mdi:cup-water",
                   show_background: true, tap_action: { action: "more-info" } });
                 const tIdx = subs.length;
-                const normale = [sIdx, fIdx].filter(Boolean)
-                  .map((i) => ".bubble-sub-button-" + i).join(", ");
-                if (normale)
-                  extraCss += normale + " { display: {{ 'none' if is_state('" +
-                    tankEid + "','on') else 'flex' }} !important; }\n";
+                if (fIdx)
+                  extraCss += ".bubble-sub-button-" + fIdx +
+                    " { display: {{ 'none' if is_state('" + tankEid +
+                    "','on') else 'flex' }} !important; }\n";
                 extraCss +=
                   ".bubble-sub-button-" + tIdx + " { display: {{ 'flex' if is_state('" +
                   tankEid + "','on') else 'none' }} !important; " +
