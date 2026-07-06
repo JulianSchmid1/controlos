@@ -147,13 +147,28 @@ function graphDefs(s) {
   ];
 }
 
+/* Sichtbarkeits-Bedingungen je Graph: nur zeigen, wenn die dafuer noetigen
+   Quell-Sensoren zugeordnet sind (VPD braucht Temp UND Feuchte). */
+function chartSensorVis(sp, key) {
+  const sNot = (sensor) => ({ condition: "state",
+    entity: sp + sensor, state_not: "Keine" });
+  const map = {
+    temp:   [sNot("sensor_temp_luft")],
+    hum:    [sNot("sensor_feuchte_luft")],
+    vpd:    [sNot("sensor_temp_luft"), sNot("sensor_feuchte_luft")],
+    co2:    [sNot("sensor_co2")],
+    blatt:  [sNot("sensor_temp_blatt")],
+    zutemp: [sNot("sensor_temp_zuluft")],
+    zuhum:  [sNot("sensor_feuchte_zuluft")],
+  };
+  return map[key] || [];
+}
+
 /* Graphen-Seite: alle Graphen gross, Zeitachse live umschaltbar. */
 function graphenView(a) {
   const s = slug(a.title);
   const sp = "select.controlos_" + s + "_";
   const zr = sp + "graph_zeitraum";
-  const zuluftVis = { zutemp: sp + "sensor_temp_zuluft",
-    zuhum: sp + "sensor_feuchte_zuluft" };
   const cards = [
     sep("Zeitraum", "mdi:chart-timeline"),
     applyDesign({ type: "custom:bubble-card", card_type: "select",
@@ -162,9 +177,9 @@ function graphenView(a) {
   ];
   for (const [key, name, dec, ents] of graphDefs(s)) {
     for (const [opt, hours, pph] of GRAPH_RANGES) {
-      const vis = [{ condition: "state", entity: zr, state: opt }];
-      if (zuluftVis[key])
-        vis.push({ condition: "state", entity: zuluftVis[key], state_not: "Keine" });
+      // Nur zeigen, wenn Zeitraum gewaehlt UND die noetigen Sensoren da sind
+      const vis = [{ condition: "state", entity: zr, state: opt },
+        ...chartSensorVis(sp, key)];
       cards.push(Object.assign(
         mg(name, dec, ents,
           { hours_to_show: hours, points_per_hour: pph, height: 220,
@@ -409,22 +424,36 @@ function monitorView(a, hass) {
           return { type: "custom:bubble-card", card_type: "pop-up",
             name, icon: gIcons[k], hash: "#graph-" + s + "-" + k, cards };
         };
+        // "Klima"-Kopf nur, wenn mindestens ein Klima-Sensor zugeordnet ist
+        const klimaSep = { condition: "or", conditions: [
+          { condition: "state", entity: sp + "sensor_temp_luft", state_not: "Keine" },
+          { condition: "state", entity: sp + "sensor_feuchte_luft", state_not: "Keine" },
+          { condition: "state", entity: sp + "sensor_co2", state_not: "Keine" },
+          { condition: "state", entity: sp + "sensor_temp_blatt", state_not: "Keine" },
+        ] };
         return { type: "grid", column_span: 2, cards: [
-          sep("Klima (" + a.title + ")", "mdi:tent"),
-          tile("temp"), tile("hum"), tile("vpd"), tile("co2"), tile("blatt"),
+          Object.assign(sep("Klima (" + a.title + ")", "mdi:tent"),
+            { visibility: [klimaSep] }),
+          tile("temp", chartSensorVis(sp, "temp")),
+          tile("hum", chartSensorVis(sp, "hum")),
+          tile("vpd", chartSensorVis(sp, "vpd")),
+          tile("co2", chartSensorVis(sp, "co2")),
+          tile("blatt", chartSensorVis(sp, "blatt")),
           Object.assign(sep("Zuluft (Raum)", "mdi:home-import-outline"),
             { visibility: [{ condition: "or", conditions: [
               { condition: "state", entity: sp + "sensor_temp_zuluft", state_not: "Keine" },
               { condition: "state", entity: sp + "sensor_feuchte_zuluft", state_not: "Keine" },
             ] }] }),
-          tile("zutemp", [{ condition: "state", entity: sp + "sensor_temp_zuluft", state_not: "Keine" }]),
-          tile("zuhum", [{ condition: "state", entity: sp + "sensor_feuchte_zuluft", state_not: "Keine" }]),
+          tile("zutemp", chartSensorVis(sp, "zutemp")),
+          tile("zuhum", chartSensorVis(sp, "zuhum")),
           ...Object.keys(byKey).map(popup),
         ] };
       })(),
       { type: "grid", column_span: 2, cards: [
-        sep("VPD-Map", "mdi:water-opacity"),
-        vpdChart([a]),
+        // VPD-Map braucht Temp + Feuchte -> nur zeigen wenn beide zugeordnet
+        Object.assign(sep("VPD-Map", "mdi:water-opacity"),
+          { visibility: chartSensorVis(sp, "vpd") }),
+        Object.assign(vpdChart([a]), { visibility: chartSensorVis(sp, "vpd") }),
         sep("Steuerung", "mdi:radar"),
         ...SHADOW.filter((k) => k !== "status").map((k) => {
           const eid = S + k;
@@ -648,7 +677,9 @@ function klimaView(a) {
       { type: "grid", cards: [
         sep("Ziele & Toleranzen (aktuelle Phase)", "mdi:target"),
         ...NUM_CLIMATE.map((k) => bslider(np + k, null)),
-        bslider(np + "blatt_offset", "Blatt-Offset (ohne Blattsensor)"),
+        // Blatt-Offset nur, wenn KEIN echter Blattsensor zugeordnet ist
+        V(bslider(np + "blatt_offset", "Blatt-Offset (ohne Blattsensor)"),
+          cEq(sp + "sensor_temp_blatt", "Keine")),
       ] },
       { type: "grid", cards: [
         sep("Steuermodi", "mdi:cog"),
@@ -711,7 +742,6 @@ function klimaView(a) {
           cOn(wp + "vorhanden_umluft"), cEq(sp + "umluft_modus", "Intervall")),
         V(bslider(np + "umluft_intervall_min", "Umluft Intervall"),
           cOn(wp + "vorhanden_umluft"), cEq(sp + "umluft_modus", "Intervall")),
-        bslider(np + "dimm_mindestleistung", "Dimm-Mindestleistung"),
       ] },
     ] };
 }
@@ -770,8 +800,12 @@ function lichtView(a) {
 function geraeteView(a) {
   const s = slug(a.title);
   const sp = "select.controlos_" + s + "_", wp = "switch.controlos_" + s + "_";
+  const np = "number.controlos_" + s + "_";
   const DIMMBAR = ["befeuchter", "entfeuchter", "heizung", "abluft",
     "licht", "undercanopy", "ventilator"];
+  // Mindestleistung ist nur relevant, wenn ueberhaupt ein Geraet dimmbar ist
+  const anyDimmbar = { condition: "or", conditions: DIMMBAR.map((d) =>
+    ({ condition: "state", entity: wp + "dimmbar_" + d, state: "on" })) };
   return { title: a.title + " · Geräte", path: "bereich-" + s + "-geraete",
     icon: "mdi:power-plug", subview: true, theme: THEME,
     type: "sections", max_columns: 4, sections: [
@@ -800,6 +834,8 @@ function geraeteView(a) {
         ...DIMMBAR.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "dimmbar_" + d, state: "on" }] })),
+        Object.assign(bslider(np + "dimm_mindestleistung",
+          "Dimm-Mindestleistung (%)"), { visibility: [anyDimmbar] }),
         sep("Sensoren (Quellen)", "mdi:access-point"),
         ...SEL_SENSOR.map((k) => bsel(sp + k, null)),
         bsel(sp + "sensor_entfeuchter", "Geräte-Feuchtesensor (Entfeuchter)"),
