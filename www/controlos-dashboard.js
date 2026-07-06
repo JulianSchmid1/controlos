@@ -48,7 +48,11 @@ function findAreas(hass) {
     if (idf && d.model !== "Standard-Profile")
       out.push({ entry_id: idf[1], title: d.name_by_user || d.name });
   }
-  out.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  // Nach Erstellungsreihenfolge sortieren (nicht alphabetisch): die
+  // config-entry-IDs sind ULIDs, deren Praefix die Erstellungszeit kodiert
+  // -> lexikografischer Vergleich = chronologisch. Damit bleibt der zuerst
+  // angelegte Bereich "Bereich 1", egal wie er heisst.
+  out.sort((a, b) => (a.entry_id || "").localeCompare(b.entry_id || ""));
   return out;
 }
 
