@@ -533,6 +533,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         tank_voll = bool(tank_eid) and ctx.state(tank_eid) == "on"
         if tank_voll:
             data["ki_vpd_prognose"] = None
+            data["_ki_prognose"] = []
             data["ki_status"] = ("pausiert (Tank voll) | %d Zeilen"
                                  % self.ki.n_rows)
             return
@@ -566,9 +567,18 @@ class ControlosCoordinator(DataUpdateCoordinator):
                    "minute": lt.hour * 60 + lt.minute}
             if row["hum"] is not None:
                 await self.hass.async_add_executor_job(self.ki.append, row)
-            data["ki_vpd_prognose"] = self.ki.predict(row, slope)
+            kurve = self.ki.predict_curve(row, slope)
+            data["ki_vpd_prognose"] = kurve[0][1] if kurve else None
+            basis = dt_util.utcnow()
+            data["_ki_prognose"] = [
+                {"minuten": m,
+                 "zeit": (basis + timedelta(minutes=m)).isoformat(),
+                 "vpd": v,
+                 "mae": self.ki.mae.get(m)}
+                for m, v in kurve]
         else:
             data["ki_vpd_prognose"] = None
+            data["_ki_prognose"] = []
 
         # Training stuendlich im Hintergrund
         if not self._ki_training and now - self.ki.trained_at > 3600:
@@ -583,10 +593,13 @@ class ControlosCoordinator(DataUpdateCoordinator):
             self.hass.async_add_executor_job(_train)
 
         # Status-Text
-        if self.ki.weights:
+        if self.ki.modelle:
             alter_h = (now - self.ki.trained_at) / 3600
-            data["ki_status"] = "bereit | MAE %.3f kPa | %d Zeilen | Modell %.1f h" % (
-                self.ki.mae or 0, self.ki.n_rows, alter_h)
+            mae_txt = " ".join(
+                "%dmin ±%.2f" % (h, self.ki.mae.get(h, 0))
+                for h in sorted(self.ki.modelle))
+            data["ki_status"] = "bereit | %s | %d Zeilen | Modell %.1f h" % (
+                mae_txt, self.ki.n_rows, alter_h)
         else:
             data["ki_status"] = "sammelt Daten (%d Zeilen, ab %d wird trainiert)" % (
                 self.ki.n_rows, 2000)

@@ -338,7 +338,41 @@ function monitorView(a, hass) {
           tap_action: { action: "navigate",
             navigation_path: "/" + DASH + "/grow-kalender-" + s } },
         sep("KI-Prognose", "mdi:brain"),
-        bstate(G + "ki_vpd_prognose", "VPD in 15 Minuten", "mdi:chart-timeline-variant"),
+        // Prognose-Chart: Ist-VPD (Historie) + KI-Vorhersage in die Zukunft
+        (() => {
+          const akzent = DESIGN.bg || "#3b82f6";
+          const gen = "const p = entity.attributes.prognose || [];" +
+            "const out = p.map(x => [new Date(x.zeit).getTime(), x.vpd]);" +
+            "const ist = hass.states['" + D + "vpd'];" +
+            "const v = ist ? parseFloat(ist.state) : NaN;" +
+            "if (out.length && !isNaN(v)) out.unshift([Date.now(), v]);" +
+            "return out;";
+          return { type: "custom:apexcharts-card",
+            grid_options: { columns: "full" },
+            header: { show: true, title: "VPD: Ist & KI-Prognose",
+              show_states: true, colorize_states: true },
+            graph_span: "6h",
+            span: { offset: "+2h" },
+            now: { show: true, label: "Jetzt", color: "#9ca3af" },
+            apex_config: {
+              chart: { height: 220 },
+              grid: { borderColor: "rgba(128,128,128,.25)" },
+              legend: { show: false },
+              tooltip: { x: { format: "HH:mm" } },
+              xaxis: { labels: { datetimeFormatter: { hour: "HH:mm" },
+                format: "HH:mm" } } },
+            yaxis: [{ decimals: 1 }],
+            series: [
+              { entity: D + "vpd", name: "VPD Ist", color: akzent,
+                stroke_width: 2, extend_to: "now",
+                group_by: { func: "avg", duration: "5min" },
+                show: { legend_value: false } },
+              { entity: G + "ki_vpd_prognose", name: "KI-Prognose",
+                color: "#f59e0b", stroke_width: 2, curve: "smooth",
+                show: { legend_value: false },
+                data_generator: gen },
+            ] };
+        })(),
         bstate(G + "ki_status", "KI Status", "mdi:brain"),
       ] },
       (() => {

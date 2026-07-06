@@ -70,6 +70,9 @@ class ControlosDataSensor(CoordinatorEntity, SensorEntity):
         if self._key == "grow_tag":
             data = self.coordinator.data or {}
             return {"phasen_historie": data.get("_history", [])}
+        if self._key == "ki_vpd_prognose":
+            data = self.coordinator.data or {}
+            return {"prognose": data.get("_ki_prognose", [])}
         return None
 
     @property

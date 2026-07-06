@@ -2,8 +2,9 @@
 
 Je Bereich werden Klima-Zeilen in Monats-CSVs gesammelt
 (/config/controlos_data/<slug>-YYYY-MM.csv, Speicherzeit je Bereich
-einstellbar). Auf diesen Daten trainiert stuendlich eine Ridge-Regression
-(pure Python, keine Abhaengigkeiten) die VPD-Prognose 15 Minuten voraus.
+einstellbar). Auf diesen Daten trainiert stuendlich je Prognose-Horizont
+(15/30/60/120 min) eine Ridge-Regression (pure Python, keine
+Abhaengigkeiten) - Ergebnis ist eine VPD-Prognose-Kurve.
 
 Alle Methoden ausser den reinen Property-Zugriffen sind blockierend und
 laufen im Executor (async_add_executor_job).
@@ -21,8 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 FIELDS = ["ts", "temp", "hum", "vpd", "blatt", "co2", "ist_tag",
           "bef", "ent", "klima", "minute"]
-HORIZON_S = 900          # Prognose-Horizont: 15 min
-PAIR_TOL_S = 150         # Toleranz beim Paaren von Trainingszeilen
+HORIZONS_MIN = [15, 30, 60, 120]   # Prognose-Horizonte (Minuten)
 MIN_ROWS = 2000          # ab hier wird trainiert (~17 h Daten)
 MAX_ROWS = 60000         # Trainings-Cap (~3 Wochen bei 30s-Takt)
 RIDGE = 1.0              # L2-Regularisierung
@@ -35,10 +35,15 @@ class KiEngine:
         self.slug = slug
         self._buf: list[dict] = []
         self._lock = threading.Lock()
-        self.weights: list[float] | None = None
-        self.mae: float | None = None
+        self.modelle: dict[int, list[float]] = {}   # Horizont(min) -> Gewichte
+        self.mae: dict[int, float] = {}             # Horizont(min) -> MAE
         self.n_rows = 0
         self.trained_at = 0.0
+
+    @property
+    def weights(self):
+        """Abwaertskompatibel: wahr, sobald Modelle existieren."""
+        return self.modelle or None
 
     # -- Dateien ------------------------------------------------------
     def _path(self, ym: str) -> str:
@@ -132,35 +137,71 @@ class KiEngine:
         if len(rows) < MIN_ROWS:
             return
 
-        # Paare bilden: Zeile i -> VPD der Zeile ~15 min spaeter
-        xs: list[list[float]] = []
-        ys: list[float] = []
-        j = 0
+        # VPD-Steigung (~5 min) als Feature vorberechnen
         prev_ts = None
         prev_vpd = None
         slopes: dict[int, float] = {}
         for i, r in enumerate(rows):
-            ts = float(r["ts"])
-            v = float(r["vpd"])
+            try:
+                ts = float(r["ts"])
+                v = float(r["vpd"])
+            except (TypeError, ValueError):
+                continue
             if prev_ts is not None and 200 <= ts - prev_ts <= 400:
                 slopes[i] = v - prev_vpd
             if i % 10 == 0:
                 prev_ts, prev_vpd = ts, v
-        for i, r in enumerate(rows):
-            ts = float(r["ts"])
-            ziel = ts + HORIZON_S
-            while j < len(rows) - 1 and float(rows[j]["ts"]) < ziel - PAIR_TOL_S:
-                j += 1
-            if abs(float(rows[j]["ts"]) - ziel) > PAIR_TOL_S:
-                continue
-            try:
-                xs.append(self._features(r, slopes.get(i, 0.0)))
-                ys.append(float(rows[j]["vpd"]))
-            except (TypeError, ValueError):
-                continue
-        if len(xs) < MIN_ROWS // 2:
-            return
 
+        # Je Horizont ein eigenes Ridge-Modell trainieren
+        neue_modelle: dict[int, list[float]] = {}
+        neue_mae: dict[int, float] = {}
+        for hmin in HORIZONS_MIN:
+            hsek = hmin * 60
+            tol = max(150, int(hsek * 0.15))
+            xs: list[list[float]] = []
+            ys: list[float] = []
+            j = 0
+            for i, r in enumerate(rows):
+                try:
+                    ts = float(r["ts"])
+                except (TypeError, ValueError):
+                    continue
+                ziel = ts + hsek
+                while (j < len(rows) - 1
+                       and float(rows[j]["ts"]) < ziel - tol):
+                    j += 1
+                if abs(float(rows[j]["ts"]) - ziel) > tol:
+                    continue
+                try:
+                    xs.append(self._features(r, slopes.get(i, 0.0)))
+                    ys.append(float(rows[j]["vpd"]))
+                except (TypeError, ValueError):
+                    continue
+            if len(xs) < MIN_ROWS // 2:
+                continue
+            w = self._ridge(xs, ys)
+            if w is None:
+                continue
+            # Guete: MAE ueber die letzten 20 % (grobe Validierung)
+            cut = int(len(xs) * 0.8)
+            fehler = [abs(sum(wi * xi for wi, xi in zip(w, x)) - y)
+                      for x, y in zip(xs[cut:], ys[cut:])]
+            neue_modelle[hmin] = w
+            neue_mae[hmin] = (round(sum(fehler) / len(fehler), 3)
+                              if fehler else 0.0)
+
+        if not neue_modelle:
+            return
+        self.modelle = neue_modelle
+        self.mae = neue_mae
+        _LOGGER.info("KI [%s]: trainiert (%d Zeilen) | MAE: %s",
+                     self.slug, self.n_rows,
+                     ", ".join("%dmin=%.3f" % (h, m)
+                               for h, m in sorted(neue_mae.items())))
+
+    @staticmethod
+    def _ridge(xs: list[list[float]],
+               ys: list[float]) -> list[float] | None:
         # Ridge: (X'X + lI) w = X'y, Gauss-Elimination (n Features klein)
         n = len(xs[0])
         xtx = [[RIDGE if a == b else 0.0 for b in range(n)] for a in range(n)]
@@ -177,18 +218,7 @@ class KiEngine:
         for a in range(n):
             for b in range(a):
                 xtx[a][b] = xtx[b][a]
-        w = self._solve(xtx, xty)
-        if w is None:
-            return
-
-        # Guete: MAE ueber die letzten 20 % (grobe Validierung)
-        cut = int(len(xs) * 0.8)
-        fehler = [abs(sum(wi * xi for wi, xi in zip(w, x)) - y)
-                  for x, y in zip(xs[cut:], ys[cut:])]
-        self.mae = round(sum(fehler) / len(fehler), 3) if fehler else None
-        self.weights = w
-        _LOGGER.info("KI [%s]: trainiert (%d Paare, MAE %.3f kPa)",
-                     self.slug, len(xs), self.mae or -1)
+        return KiEngine._solve(xtx, xty)
 
     @staticmethod
     def _solve(m: list[list[float]], v: list[float]) -> list[float] | None:
@@ -208,11 +238,23 @@ class KiEngine:
         return [a[i][n] for i in range(n)]
 
     # -- Prognose (nicht blockierend) ----------------------------------
-    def predict(self, row: dict, slope: float) -> float | None:
-        if not self.weights:
-            return None
+    def predict_curve(self, row: dict,
+                      slope: float) -> list[tuple[int, float]]:
+        """Prognose-Kurve: [(Minuten, VPD), ...] sortiert nach Horizont."""
+        if not self.modelle:
+            return []
         try:
             x = self._features(row, slope)
-            return round(sum(w * xi for w, xi in zip(self.weights, x)), 3)
         except (TypeError, ValueError):
-            return None
+            return []
+        out: list[tuple[int, float]] = []
+        for hmin in sorted(self.modelle):
+            w = self.modelle[hmin]
+            out.append(
+                (hmin, round(sum(wi * xi for wi, xi in zip(w, x)), 3)))
+        return out
+
+    def predict(self, row: dict, slope: float) -> float | None:
+        """Kuerzester Horizont (15 min) - Abwaertskompatibilitaet."""
+        kurve = self.predict_curve(row, slope)
+        return kurve[0][1] if kurve else None
