@@ -531,8 +531,10 @@ class Regler:
         kuehl_on = klima_mode == "cool"
         klima_fan_eff = klima_fan if klima_mode in ("cool", "heat") else "auto"
 
-        # LIVE-Klima (nur Diffs)
-        klima_schalten = ctx.sw("schalten_klima")
+        # LIVE-Klima (nur Diffs). Wird jetzt direkt vom Betriebsmodus gesteuert
+        # (Steuern = live schalten, Monitor = nur Shadow) - kein separater
+        # Scharfschalter mehr.
+        klima_schalten = ctx.sel_raw("betriebsmodus") == "Steuern"
         klima_acted = ""
         if klima_schalten and klima_is_climate:
             if klima_sm in ("Area-Sensor", "Hybrid") and not d.get("_temp_fresh", True):

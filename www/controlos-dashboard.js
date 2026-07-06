@@ -28,7 +28,7 @@ const SW_VORHANDEN = [
   "vorhanden_undercanopy", "vorhanden_abluft", "vorhanden_ventilator",
   "vorhanden_umluft",
 ];
-const SW_OPTIONS = ["ki_modus", "nacht_statisch", "schalten_klima"];
+const SW_OPTIONS = ["ki_engine", "ki_modus", "nacht_statisch"];
 const SHADOW = ["status", "licht", "undercanopy", "befeuchter", "entfeuchter",
   "heizung", "klima", "abluft", "co2", "ventilator", "umluft"];
 

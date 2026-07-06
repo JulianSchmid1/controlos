@@ -3,8 +3,7 @@
 Je Tick (30s): Geraete-Select-Optionen aktualisieren, abgeleitete Werte
 berechnen, Regelung (regelung.Regler, 1:1 vom Add-on portiert) laufen lassen.
 Betriebsmodus je Bereich: "Monitor" = nur Shadow-Sensoren, "Steuern" = echte
-Service-Calls auf die zugeordneten Geraete. Klima-LIVE zusaetzlich ueber den
-separaten Schalter `schalten_klima` (wie im Add-on erprobt).
+Service-Calls auf die zugeordneten Geraete (inkl. Klima-LIVE).
 """
 from __future__ import annotations
 
@@ -285,17 +284,17 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("Bias %s", key)
 
-        # -- Schalten --
+        # -- Schalten -- (Steuern = alles inkl. Klima; Monitor = nichts)
         steuern = ctx.sel_raw("betriebsmodus") == "Steuern" and ctx.sw("aktiv")
         if steuern:
             await self._apply_devices(devices)
+            for dmn, svc, sdata in klima_cmds:  # LIVE-Klima
+                try:
+                    await self.hass.services.async_call(dmn, svc, sdata, blocking=False)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Klima-Call %s.%s", dmn, svc)
         else:
             self._last_dev = {}
-        for dmn, svc, sdata in klima_cmds:  # LIVE-Klima (eigener Schalter)
-            try:
-                await self.hass.services.async_call(dmn, svc, sdata, blocking=False)
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Klima-Call %s.%s", dmn, svc)
 
         # -- Grow-Tracking --
         store = self._store()
@@ -527,6 +526,12 @@ class ControlosCoordinator(DataUpdateCoordinator):
         now = _time.time()
         vpd = data.get("data_vpd")
         slope = 0.0
+        # Echte KI aus: weder Daten sammeln noch Prognosen rechnen
+        if not ctx.sw("ki_engine"):
+            data["ki_vpd_prognose"] = None
+            data["_ki_prognose"] = []
+            data["ki_status"] = "aus"
+            return
         # Tank voll: Klima-Dynamik ist untypisch (Entfeuchter zwangspausiert)
         # -> weder Zeilen sammeln noch Prognosen ausgeben
         tank_eid = ctx.sel("sensor_tank")
