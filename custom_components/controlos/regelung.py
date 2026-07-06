@@ -131,12 +131,15 @@ class Regler:
 
     # ------------------------------------------------------------------
     def ki_bias(self, ctx, eff_modus, ist_tag, sys_modus, tank_voll,
-                vpd, vpd_ziel, bias_out):
+                vpd, vpd_ziel, bias_out, bef_da=False, ent_da=False):
         """Adaptiver Bias - AUSSCHLIESSLICH fuer die VPD-Tagsteuerung.
 
         Nachts (statische Regelung) und im Feuchte-Modus wird weder gelernt
         noch angewendet; bei vollem Entfeuchter-Tank stoppt das Rechnen
-        (eingefrorener Wert wird tagsueber weiter angewendet). Die frueheren
+        (eingefrorener Wert wird tagsueber weiter angewendet). Anti-Windup:
+        fehlt der Aktor, der den Fehler beheben koennte (kein Befeuchter bei
+        zu trockener Luft / kein Entfeuchter bei zu feuchter), wird nicht
+        integriert, sondern der Bias zerfaellt gegen 0. Die frueheren
         Temp-/Feuchte-Biases sind abgeschafft und zerfallen gegen 0."""
         ki_active = ctx.sw("ki_modus") and sys_modus == "Geschlossenes System"
 
@@ -165,14 +168,23 @@ class Regler:
             return 0.0  # Nacht/Statisch & Feuchte-Modus: Bias komplett aussen vor
         if tank_voll or vpd is None:
             return vb   # Rechnen gestoppt, eingefrorener Wert gilt weiter
-        vb = max(-0.4, min(0.4, round(vb + 0.008 * (vpd_ziel - vpd), 3)))
+        e = vpd_ziel - vpd
+        if (e > 0 and not ent_da) or (e < 0 and not bef_da):
+            # Aktor fehlt strukturell -> Windup abbauen statt integrieren
+            vb = dec(vb, 0.01, 3)
+            bput("vpd", "tag", vb)
+            return vb
+        vb = max(-0.4, min(0.4, round(vb + 0.008 * e, 3)))
         bput("vpd", "tag", vb)
         return vb
 
     # ------------------------------------------------------------------
     def dev_out(self, ctx, on, d_main, dimmbar_key, dimmer_key, dim, pmin,
-                stufe_key=None, dev_map=None, dev_name=None):
-        """Shadow-Text + Soll-Zustand fuer ein Geraet."""
+                stufe_key=None, dev_map=None, dev_name=None, stage_frac=None):
+        """Shadow-Text + Soll-Zustand fuer ein Geraet.
+
+        stage_frac: expliziter Stufen-Anteil 0..1 (Zonen-Logik) statt der
+        kontinuierlichen Ableitung aus dim."""
         if not d_main:
             return "kein Gerät"
         if dev_map is not None and dev_name:
@@ -192,7 +204,9 @@ class Regler:
             seid = ctx.sel(stufe_key)
             if seid and dim:
                 opts = ctx.attr(seid, "options", []) or []
-                stg = self.stage_pick(dim[0], dim[1], dim[2], opts)
+                stg = (self.stage_pick(stage_frac, 0.0, 1.0, opts)
+                       if stage_frac is not None
+                       else self.stage_pick(dim[0], dim[1], dim[2], opts))
                 if stg:
                     if dev_map is not None and dev_name:
                         dev_map[dev_name]["stufe"] = stg
@@ -385,18 +399,37 @@ class Regler:
         ki_stopp = (tank_voll or "befeuchter" in ausgefallen
                     or "entfeuchter" in ausgefallen)
         vb = self.ki_bias(ctx, eff_modus, ist_tag, sys_modus, ki_stopp,
-                          vpd, vpd_ziel, bias_out)
+                          vpd, vpd_ziel, bias_out,
+                          bef_da=bef_da, ent_da=ent_da)
         vpd_min += vb
         vpd_max += vb
         vpd_ziel += vb
 
         # -- Feuchte / VPD --
+        ent_stage_frac = bef_stage_frac = None
         if eff_modus == "VPD" and vpd is not None:
-            bef_on, ent_on = self.pair_hyst(
-                "bef", "ent", vpd, vpd_min, vpd_max, vpd_ziel, 0.05,
-                bef_da, ent_da, bef_dual, ent_dual)
-            bef_dim = (vpd, vpd_ziel, vpd_max)
-            ent_dim = (vpd, vpd_ziel, vpd_min)
+            # Zonen wie im Altsystem (GanjOS): innere Toleranz-Haelfte =
+            # perfekt (alles aus), aeussere Haelfte = 50%-Zone (Stufe
+            # niedrig; nicht regelbar -> einfach AN), ausserhalb der
+            # Toleranz = 100%-Zone (Stufe hoch). Die Schalt-Hysterese
+            # liegt damit komplett INNERHALB der Toleranz; nz verhindert
+            # Flattern an der Zonengrenze (+ MIN_SWITCH_S).
+            nz = max(0.02, vpd_tol / 8.0)
+            lo_perf = (vpd_min + vpd_ziel) / 2.0
+            hi_perf = (vpd_ziel + vpd_max) / 2.0
+            ent_on = (self.latch("ent", vpd <= lo_perf, vpd >= lo_perf + nz)
+                      if ent_da else self.latch("ent", False, True))
+            bef_on = (self.latch("bef", vpd >= hi_perf, vpd <= hi_perf - nz)
+                      if bef_da else self.latch("bef", False, True))
+            if bef_on and ent_on:  # Latch-Uebergang: nie beide gleichzeitig
+                if vpd >= vpd_ziel:
+                    ent_on = False
+                else:
+                    bef_on = False
+            bef_dim = (vpd, hi_perf, vpd_max)
+            ent_dim = (vpd, lo_perf, vpd_min)
+            ent_stage_frac = 0.999 if vpd <= vpd_min else 0.0
+            bef_stage_frac = 0.999 if vpd >= vpd_max else 0.0
             hum_info = "VPD %.2f [%.2f|%.2f|%.2f]" % (vpd, vpd_min, vpd_ziel, vpd_max)
         elif hum is not None:
             ent_on, bef_on = self.pair_hyst(
@@ -430,6 +463,7 @@ class Regler:
             if h_ent is not None:
                 ent_on = self.latch("ent_sm", h_ent >= e_ziel + f_tol, h_ent <= e_ziel)
                 ent_dim = (h_ent, e_ziel, e_ziel + f_tol)
+                ent_stage_frac = None  # Stufe wieder aus dim ableiten
                 hum_info += " | Entf[%s] %.1f->Z%.1f" % (entf_sm[:4], h_ent, e_ziel)
 
         if tank_voll:
@@ -632,7 +666,8 @@ class Regler:
         # ===== Ausgabe =====
         shadow["befeuchter"] = self.dev_out(
             ctx, bef_on, d_bef, "dimmbar_befeuchter", "dimmer_befeuchter",
-            bef_dim, pmin, dev_map=devices, dev_name="befeuchter")
+            bef_dim, pmin, dev_map=devices, dev_name="befeuchter",
+            stage_frac=bef_stage_frac)
         if d_ent and tank_voll:
             devices["entfeuchter"] = {"entity": d_ent, "on": False, "pct": None,
                                       "stufe": None, "stufe_entity": None}
@@ -641,7 +676,8 @@ class Regler:
             shadow["entfeuchter"] = self.dev_out(
                 ctx, ent_on, d_ent, "dimmbar_entfeuchter", "dimmer_entfeuchter",
                 ent_dim, pmin, stufe_key="stufe_entfeuchter",
-                dev_map=devices, dev_name="entfeuchter")
+                dev_map=devices, dev_name="entfeuchter",
+                stage_frac=ent_stage_frac)
         shadow["heizung"] = self.dev_out(
             ctx, heiz_on, d_heiz, "dimmbar_heizung", "dimmer_heizung",
             None, pmin, dev_map=devices, dev_name="heizung")
