@@ -75,6 +75,24 @@ class ControlosCalendar(CalendarEntity):
                                          summary=label))
 
         if store:
+            # Ernte-Termine je Strain des aktiven Grows.
+            # Referenz: Photoperiodisch = Bluete-Start (12/12), Autoflowering =
+            # Grow-Start (Tag 1). Erntedatum = Referenz + Bluetezeit-Wochen.
+            typ_e = self._ents().get("grow_typ")
+            typ = getattr(typ_e, "current_option", None) or "Photoperiodisch"
+            ref_key = "grow_start" if typ == "Autoflowering" else "bluete_start"
+            ref = _as_date(getattr(self._ents().get(ref_key), "native_value", None))
+            if ref is not None:
+                for st in store.strains(self._entry.entry_id):
+                    try:
+                        wochen = int(st.get("wochen") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    ernte = ref + timedelta(weeks=wochen)
+                    evs.append(CalendarEvent(
+                        start=ernte, end=ernte + timedelta(days=1),
+                        summary="🌾 Ernte: %s" % (st.get("name") or "?")))
+
             # Phasen-Zeitraeume aus dem Tagebuch
             g = store.grow(self._entry.entry_id)
             hist = sorted((h for h in (g.get("history") or [])

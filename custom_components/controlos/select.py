@@ -29,6 +29,7 @@ async def async_setup_entry(
     ents = [ControlosSelect(entry, k, c) for k, c in SELECT_PARAMS.items()]
     ents += [ControlosDeviceSelect(entry, k, c) for k, c in SELECT_DEVICE_PARAMS.items()]
     ents.append(NotifyTargetSelect(entry))
+    ents.append(StrainSelect(entry))
     async_add_entities(ents)
 
 
@@ -56,12 +57,18 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
         changed = option != self._attr_current_option
         self._attr_current_option = option
         self.async_write_ha_state()
+        if not changed:
+            return
+        coord = (self.hass.data.get(DOMAIN, {})
+                 .get(self._entry.entry_id, {}).get("coordinator"))
+        if not coord:
+            return
         # Wuchsphase gewechselt -> Phasenprofil laden (Override sonst Standard)
-        if changed and self._key == "wuchsphase":
-            coord = (self.hass.data.get(DOMAIN, {})
-                     .get(self._entry.entry_id, {}).get("coordinator"))
-            if coord:
-                self.hass.async_create_task(coord.async_on_phase_change(option))
+        if self._key == "wuchsphase":
+            self.hass.async_create_task(coord.async_on_phase_change(option))
+        # Phasen-Editor gewechselt -> Profil in die pe_-Regler laden (nur Anzeige)
+        elif self._key == "phase_editor":
+            self.hass.async_create_task(coord.async_on_phase_editor_change(option))
 
 
 class ControlosDeviceSelect(ControlosBaseEntity, SelectEntity):
@@ -101,6 +108,55 @@ class ControlosDeviceSelect(ControlosBaseEntity, SelectEntity):
         if option not in self._attr_options:
             self._attr_options = self._compute()
         self.async_write_ha_state()
+
+
+class StrainSelect(ControlosBaseEntity, SelectEntity):
+    """Auswahl eines Strains des aktiven Grows (zum Entfernen).
+
+    Optionen kommen dynamisch aus dem Store (Coordinator ruft refresh_options)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "strain_auswahl",
+                         {"name": "Strain (zum Entfernen)", "icon": "mdi:cannabis"},
+                         "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        strains = store.strains(self._entry.entry_id) if store else []
+        opts = ["%d. %s" % (i + 1, s.get("name") or "?")
+                for i, s in enumerate(strains)]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_index(self) -> int:
+        """0-basierter Index des gewaehlten Strains, -1 wenn keiner."""
+        try:
+            return self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return -1
 
 
 class NotifyTargetSelect(RestoreEntity, SelectEntity):

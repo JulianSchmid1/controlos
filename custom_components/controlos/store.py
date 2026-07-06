@@ -61,11 +61,44 @@ class ControlosStore:
     # -- Grow-Tracking --
     def grow(self, entry_id: str) -> dict:
         return self.data["grow"].setdefault(
-            entry_id, {"phase_start": None, "history": []})
+            entry_id, {"phase_start": None, "history": [],
+                       "strains": [], "archive": []})
 
     def set_grow_value(self, entry_id: str, key: str, value) -> None:
         self.grow(entry_id)[key] = value
         self._save()
+
+    # -- Grow-Verwaltung: Strains + Archiv --
+    def strains(self, entry_id: str) -> list:
+        return list(self.grow(entry_id).get("strains") or [])
+
+    def add_strain(self, entry_id: str, name: str, wochen: int) -> None:
+        g = self.grow(entry_id)
+        g.setdefault("strains", []).append(
+            {"name": str(name or "?").strip(), "wochen": int(wochen)})
+        self._save()
+
+    def remove_strain(self, entry_id: str, index: int) -> None:
+        g = self.grow(entry_id)
+        lst = g.get("strains") or []
+        if 0 <= index < len(lst):
+            lst.pop(index)
+            self._save()
+
+    def archive_grow(self, entry_id: str, snapshot: dict) -> None:
+        """Aktuellen Grow archivieren + aktiven Grow zuruecksetzen."""
+        g = self.grow(entry_id)
+        arch = g.setdefault("archive", [])
+        arch.append(dict(snapshot))
+        g["archive"] = arch[-50:]
+        g["strains"] = []
+        g["history"] = []
+        g["phase_start"] = None
+        g["grow_start_ref"] = None
+        self._save()
+
+    def grow_archive(self, entry_id: str) -> list:
+        return list(self.grow(entry_id).get("archive") or [])
 
     def set_phase_start(self, entry_id: str, phase: str, date_iso: str) -> None:
         g = self.grow(entry_id)

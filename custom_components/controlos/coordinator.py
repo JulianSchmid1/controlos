@@ -109,6 +109,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         self._alerts: dict = {}        # Alarm-Key -> zuletzt gemeldet (ts)
         self._alert_on: dict = {}      # Alarm-Key -> aktueller Zustand
         self._dev_track: dict = {}     # geraet_*-Select -> zuletzt zugewiesen
+        self._pe_loaded = False        # Phasen-Editor-Werte initial geladen?
 
     # -- Zugriff --
     def _ents(self):
@@ -174,6 +175,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     upd()
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("refresh_options")
+
+        # Phasen-Editor-Regler beim ersten Tick mit dem Profil der gewaehlten
+        # Editor-Phase befuellen (danach nur noch bei Auswahl-Wechsel).
+        if not self._pe_loaded and ents:
+            self._pe_loaded = True
+            editor = ents.get("phase_editor")
+            if editor is not None and editor.current_option:
+                await self.async_on_phase_editor_change(editor.current_option)
 
         # -- MQTT-Watchdog (haengender Broker -> Neustart) --
         try:
@@ -317,6 +326,8 @@ class ControlosCoordinator(DataUpdateCoordinator):
             except (TypeError, ValueError):
                 data["phase_tag"] = None
             data["_history"] = list(g.get("history") or [])
+            data["_strains"] = list(g.get("strains") or [])
+            data["_grow_archive"] = list(g.get("archive") or [])
 
             # -- Bluetetage (je Grow-Typ) --
             # Quelle ist das Datumsfeld "Blüte-Startdatum" (manuell korrigier-
@@ -708,30 +719,112 @@ class ControlosCoordinator(DataUpdateCoordinator):
         store.set_phase_start(self.entry.entry_id, phase, date.today().isoformat())
         await self.async_request_refresh()
 
-    async def async_save_override(self) -> None:
+    async def _load_into(self, prefix: str, values: dict) -> None:
+        """Phasenwerte in die Entities mit gegebenem Praefix schreiben."""
         ents = self._ents()
-        ctx = _Ctx(self.hass, ents)
-        phase = ctx.sel_raw("wuchsphase")
-        store = self._store()
-        if not phase or store is None:
-            return
-        store.set_override(self.entry.entry_id, phase,
-                           {k: ctx.num(k, 0.0) for k in PHASE_KEYS})
-
-    async def async_reset_override(self) -> None:
-        ents = self._ents()
-        ctx = _Ctx(self.hass, ents)
-        phase = ctx.sel_raw("wuchsphase")
-        store = self._store()
-        if not phase or store is None:
-            return
-        store.clear_override(self.entry.entry_id, phase)
-        values = store.get_std(phase)
         for key in PHASE_KEYS:
-            e = ents.get(key)
+            e = ents.get(prefix + key)
             if e is not None and key in values:
                 try:
                     await e.async_set_native_value(float(values[key]))
                 except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Std laden %s", key)
+                    _LOGGER.exception("Phase laden %s%s", prefix, key)
+
+    async def async_on_phase_editor_change(self, phase: str) -> None:
+        """Editor-Phase gewaehlt: deren Profil in die pe_-Regler laden.
+        Rein zum Bearbeiten - keine Auswirkung auf die aktive Steuerung."""
+        store = self._store()
+        if store is None:
+            return
+        await self._load_into("pe_", store.effective_phase(self.entry.entry_id, phase))
+
+    def _editor_phase(self, ctx) -> str | None:
+        return ctx.sel_raw("phase_editor")
+
+    async def async_save_override(self) -> None:
+        """Aktuelle pe_-Regler als Override der EDITOR-Phase speichern."""
+        ents = self._ents()
+        ctx = _Ctx(self.hass, ents)
+        phase = self._editor_phase(ctx)
+        store = self._store()
+        if not phase or store is None:
+            return
+        store.set_override(self.entry.entry_id, phase,
+                           {k: ctx.num("pe_" + k, 0.0) for k in PHASE_KEYS})
+        # Ist die bearbeitete Phase die aktive? Dann Steuerungswerte mitnehmen.
+        if phase == ctx.sel_raw("wuchsphase"):
+            await self._load_into("", store.effective_phase(self.entry.entry_id, phase))
+        await self.async_request_refresh()
+
+    async def async_reset_override(self) -> None:
+        """Override der EDITOR-Phase loeschen, Standard in die pe_-Regler laden."""
+        ents = self._ents()
+        ctx = _Ctx(self.hass, ents)
+        phase = self._editor_phase(ctx)
+        store = self._store()
+        if not phase or store is None:
+            return
+        store.clear_override(self.entry.entry_id, phase)
+        std = store.get_std(phase)
+        await self._load_into("pe_", std)
+        if phase == ctx.sel_raw("wuchsphase"):
+            await self._load_into("", std)
+        await self.async_request_refresh()
+
+    # -- Grow-Verwaltung --------------------------------------------------
+    async def async_strain_add(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        if store is None:
+            return
+        name_e = ents.get("strain_name")
+        wochen_e = ents.get("strain_bluetezeit")
+        name = (getattr(name_e, "native_value", "") or "").strip()
+        wochen = int(getattr(wochen_e, "native_value", 9) or 9)
+        if not name:
+            return
+        store.add_strain(self.entry.entry_id, name, wochen)
+        if name_e is not None:
+            await name_e.async_set_value("")
+        await self.async_request_refresh()
+
+    async def async_strain_remove(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        sel = ents.get("strain_auswahl")
+        if store is None or sel is None:
+            return
+        idx = sel.selected_index()
+        if 0 <= idx < len(store.strains(self.entry.entry_id)):
+            store.remove_strain(self.entry.entry_id, idx)
+            sel.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_grow_neu(self) -> None:
+        """Laufenden Grow archivieren + frischen Grow starten (Start = heute)."""
+        store = self._store()
+        ents = self._ents()
+        if store is None:
+            return
+        ctx = _Ctx(self.hass, ents)
+        name_e = ents.get("grow_name")
+        gstart_e = ents.get("grow_start")
+        bstart_e = ents.get("bluete_start")
+        old_start = getattr(gstart_e, "native_value", None)
+        snapshot = {
+            "name": (getattr(name_e, "native_value", "") or "Grow"),
+            "grow_typ": ctx.sel_raw("grow_typ") or "Photoperiodisch",
+            "start": old_start.isoformat() if isinstance(old_start, date) else None,
+            "ende": date.today().isoformat(),
+            "strains": store.strains(self.entry.entry_id),
+        }
+        store.archive_grow(self.entry.entry_id, snapshot)
+        # Frischer Grow: Start = heute, Blüte-Start leeren
+        if gstart_e is not None:
+            gstart_e.set_internal(date.today())
+        if bstart_e is not None:
+            bstart_e.set_internal(None)
+        sel = ents.get("strain_auswahl")
+        if sel is not None:
+            sel.refresh_options()
         await self.async_request_refresh()

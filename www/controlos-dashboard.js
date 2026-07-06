@@ -112,6 +112,12 @@ function bstate(entity, name, icon) {
     button_type: "state", entity, name, icon, card_layout: "large",
     show_state: true, scrolling_effect: true, tap_action: { action: "more-info" } });
 }
+function bbtn(entity, name, icon) {
+  return applyDesign({ type: "custom:bubble-card", card_type: "button",
+    button_type: "name", entity, name, icon, card_layout: "large",
+    tap_action: { action: "call-service", service: "button.press",
+      target: { entity_id: entity } } });
+}
 function mg(name, decimals, entities, extra) {
   return Object.assign({ type: "custom:mini-graph-card", name, hours_to_show: 24,
     points_per_hour: 6, line_width: 2, decimals, height: 100, hour24: true,
@@ -588,6 +594,25 @@ function monitorView(a, hass) {
 function kalenderView(a) {
   const s = slug(a.title);
   const G = "sensor.controlos_" + s + "_";
+  const sp = "select.controlos_" + s + "_";
+  const bp = "button.controlos_" + s + "_";
+  // Strain-Liste inkl. berechnetem Erntedatum (Photo: Blüte-Start, Auto: Grow-Start)
+  const strainList =
+    "{% set st = state_attr('" + G + "grow_tag','strains') or [] %}\n" +
+    "{% set typ = states('" + sp + "grow_typ') %}\n" +
+    "{% set ref = states('date.controlos_" + s + "_grow_start') if typ == 'Autoflowering' " +
+    "else states('date.controlos_" + s + "_bluete_start') %}\n" +
+    "{% if st %}{% for e in st %}" +
+    "- **{{ e.name }}** — Blütezeit {{ e.wochen }} Wochen" +
+    "{% if ref not in ['unknown','unavailable','',None] %} → 🌾 Ernte ~ " +
+    "{{ (as_datetime(ref) + timedelta(weeks=e.wochen|int)).strftime('%d.%m.%Y') }}{% endif %}\n" +
+    "{% endfor %}{% else %}_Noch keine Strains eingetragen._{% endif %}";
+  const archiv =
+    "{% set arch = state_attr('" + G + "grow_tag','grow_archiv') or [] %}\n" +
+    "{% if arch %}{% for g in arch %}" +
+    "- **{{ g.name }}** ({{ g.start }} → {{ g.ende }})" +
+    "{% if g.strains %} · {{ g.strains | map(attribute='name') | join(', ') }}{% endif %}\n" +
+    "{% endfor %}{% else %}_Noch keine abgeschlossenen Grows._{% endif %}";
   const diary =
     "{% set h = state_attr('" + G + "grow_tag','phasen_historie') or [] %}\n" +
     "{% set gs = states('date.controlos_" + s + "_grow_start') %}\n" +
@@ -604,6 +629,26 @@ function kalenderView(a) {
         { type: "calendar", initial_view: "dayGridMonth",
           entities: ["calendar.controlos_" + s + "_kalender"],
           grid_options: { columns: "full", rows: 6 } },
+      ] },
+      { type: "grid", cards: [
+        sep("Grow-Verwaltung", "mdi:sprout"),
+        { type: "entities", entities: [
+          { entity: "text.controlos_" + s + "_grow_name", name: "Grow-Name" },
+          { entity: sp + "grow_typ", name: "Grow-Typ" },
+          { entity: "date.controlos_" + s + "_grow_start", name: "Grow-Start" },
+          { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Start" }] },
+        bbtn(bp + "grow_neu", "Neuen Grow starten", "mdi:sprout"),
+        sep("Strains", "mdi:cannabis"),
+        { type: "entities", entities: [
+          { entity: "text.controlos_" + s + "_strain_name", name: "Sorte" },
+          { entity: "number.controlos_" + s + "_strain_bluetezeit", name: "Blütezeit (Wochen)" }] },
+        bbtn(bp + "strain_add", "Strain hinzufügen", "mdi:plus-circle"),
+        { type: "markdown", content: strainList },
+        { type: "entities", entities: [
+          { entity: sp + "strain_auswahl", name: "Strain wählen" }] },
+        bbtn(bp + "strain_remove", "Gewählten Strain entfernen", "mdi:minus-circle"),
+        sep("Archiv (abgeschlossene Grows)", "mdi:archive"),
+        { type: "markdown", content: archiv },
       ] },
       { type: "grid", cards: [
         sep("Phasen-Tagebuch", "mdi:book-open-variant"),
@@ -646,12 +691,10 @@ function configView(a) {
         bsel(sp + "betriebsmodus", "Betriebsmodus (Monitor/Steuern)"),
         sep("Wuchsphase & Grow", "mdi:sprout-outline"),
         bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
-        bsel(sp + "wuchsphase", "Aktuelle Phase"),
-        { type: "entities", entities: [
-          { entity: "date.controlos_" + s + "_grow_start", name: "Grow-Startdatum" },
-          { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Startdatum" },
-          { entity: bp + "phase_override_speichern", name: "Phase für diesen Bereich speichern" },
-          { entity: bp + "phase_override_reset", name: "Phase auf Standard zurücksetzen" }] },
+        bsel(sp + "wuchsphase", "Aktuelle Phase (Steuerung)"),
+        { type: "markdown", content:
+          "Grow benennen, Strains & Ernten verwaltest du auf der Seite " +
+          "**Grow-Kalender**; Phasen-Profile bearbeiten unter **Klima-Regelung**." },
       ] },
       { type: "grid", cards: [
         sep("Einstellungen", "mdi:tune"),
@@ -669,7 +712,7 @@ function configView(a) {
 function klimaView(a) {
   const s = slug(a.title);
   const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
-  const wp = "switch.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_", bp = "button.controlos_" + s + "_";
   const cOn = (ent) => ({ condition: "state", entity: ent, state: "on" });
   const cEq = (ent, st) => ({ condition: "state", entity: ent, state: st });
   const V = (card, ...conds) => Object.assign(card, { visibility: conds });
@@ -683,6 +726,17 @@ function klimaView(a) {
         // Blatt-Offset nur, wenn KEIN echter Blattsensor zugeordnet ist
         V(bslider(np + "blatt_offset", "Blatt-Offset (ohne Blattsensor)"),
           cEq(sp + "sensor_temp_blatt", "Keine")),
+      ] },
+      { type: "grid", cards: [
+        sep("Phasen-Profile bearbeiten", "mdi:pencil-ruler"),
+        { type: "markdown", content:
+          "Wähle eine Phase, passe ihr Profil an und **speichere**. Das ändert " +
+          "**nur das gespeicherte Profil** – nicht die aktive Steuerung (außer " +
+          "die bearbeitete Phase ist zufällig die aktuell aktive)." },
+        bsel(sp + "phase_editor", "Phase auswählen"),
+        ...NUM_CLIMATE.map((k) => bslider(np + "pe_" + k, null)),
+        bbtn(bp + "phase_override_speichern", "Profil speichern", "mdi:content-save-edit"),
+        bbtn(bp + "phase_override_reset", "Auf Standard zurücksetzen", "mdi:backup-restore"),
       ] },
       { type: "grid", cards: [
         sep("Steuermodi", "mdi:cog"),

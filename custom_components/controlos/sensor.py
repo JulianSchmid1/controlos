@@ -69,7 +69,9 @@ class ControlosDataSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         if self._key == "grow_tag":
             data = self.coordinator.data or {}
-            return {"phasen_historie": data.get("_history", [])}
+            return {"phasen_historie": data.get("_history", []),
+                    "strains": data.get("_strains", []),
+                    "grow_archiv": data.get("_grow_archive", [])}
         if self._key == "ki_vpd_prognose":
             data = self.coordinator.data or {}
             return {"prognose": data.get("_ki_prognose", [])}

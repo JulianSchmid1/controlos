@@ -8,7 +8,13 @@ erprobten Add-ons (core.py), damit die spaeter portierte Regel-Logik (Area.tick)
 DOMAIN = "controlos"
 
 PLATFORMS = ["number", "select", "switch", "sensor", "binary_sensor",
-             "button", "date", "time", "todo", "calendar"]
+             "button", "date", "time", "todo", "calendar", "text"]
+
+# TEXT: Freitext-Eingaben (Grow-Verwaltung)
+TEXT_PARAMS = {
+    "grow_name":   {"name": "Grow-Name", "icon": "mdi:sprout", "default": "Mein Grow"},
+    "strain_name": {"name": "Strain (Sorte)", "icon": "mdi:cannabis", "default": ""},
+}
 
 # TIME: Licht-Zeitplan je Bereich (zeitbasiert -> unabhaengig von Sensorik)
 TIME_PARAMS = {
@@ -60,8 +66,11 @@ SHADOW_KEYS = ["status", "licht", "undercanopy", "befeuchter", "entfeuchter",
 
 # Buttons je Bereich (Phasen-Override)
 BUTTON_PARAMS = {
-    "phase_override_speichern": {"name": "Phase für diesen Bereich speichern", "icon": "mdi:content-save-edit"},
-    "phase_override_reset":     {"name": "Phase auf Standard zurücksetzen",    "icon": "mdi:backup-restore"},
+    "phase_override_speichern": {"name": "Phase-Profil speichern", "icon": "mdi:content-save-edit"},
+    "phase_override_reset":     {"name": "Phase-Profil auf Standard zurücksetzen", "icon": "mdi:backup-restore"},
+    "strain_add":    {"name": "Strain hinzufügen",         "icon": "mdi:plus-circle"},
+    "strain_remove": {"name": "Gewählten Strain entfernen", "icon": "mdi:minus-circle"},
+    "grow_neu":      {"name": "Neuen Grow starten",         "icon": "mdi:sprout"},
 }
 
 # ---------------------------------------------------------------------------
@@ -117,7 +126,16 @@ NUMBER_PARAMS = {
     "abluft_backup_co2":  {"name": "Abluft-Backup CO2",   "min": 800, "max": 3000, "step": 50, "unit": "ppm", "icon": "mdi:molecule-co2", "default": 1500},
     "abluft_backup_vpd":  {"name": "Abluft-Backup VPD",   "min": 1.0, "max": 3.0, "step": 0.05, "unit": "kPa", "icon": "mdi:water-alert", "default": 2.0},
     "abluft_backup_disarm_min": {"name": "Abluft-Backup Entschärf-Zeit", "min": 0, "max": 60, "step": 1, "unit": "min", "icon": "mdi:timer-off-outline", "default": 10},
+    # -- Grow-Verwaltung --
+    "strain_bluetezeit": {"name": "Strain Blütezeit", "min": 1, "max": 20, "step": 1, "unit": "Wochen", "icon": "mdi:flower-outline", "default": 9},
 }
+
+# Phasen-Editor: Kopien der Phasen-Klimawerte (nur zum Bearbeiten der Profile,
+# unabhaengig von den aktiven Steuerungswerten NUM_CLIMATE).
+for _pk in PHASE_KEYS:
+    _pe = dict(NUMBER_PARAMS[_pk])
+    _pe["name"] = "Profil: " + _pe["name"]
+    NUMBER_PARAMS["pe_" + _pk] = _pe
 
 # ---------------------------------------------------------------------------
 # SWITCH: Aktiv, Modi-Flags, Geraete-Vorhanden / Dimmbar / Dual
@@ -160,6 +178,7 @@ SELECT_PARAMS = {
     "entfeuchter_steuermodus": {"name": "Entfeuchter Steuermodus", "icon": "mdi:tune", "options": ["Area-Sensor", "Geräte-Sensor", "Hybrid", "Autonom"], "default": "Area-Sensor"},
     "prio":            {"name": "Maßgebender Faktor", "icon": "mdi:swap-vertical", "options": ["temperatur", "feuchte"], "default": "temperatur"},
     "wuchsphase":      {"name": "Wuchsphase", "icon": "mdi:sprout", "options": ["Keimling / Klon", "Vegetation", "Vorblüte", "Hauptblüte", "Spätblüte", "Trocknen"], "default": "Vegetation"},
+    "phase_editor":    {"name": "Phase bearbeiten", "icon": "mdi:pencil-ruler", "options": PHASES, "default": "Vegetation"},
     "grow_typ":        {"name": "Grow-Typ", "icon": "mdi:dna", "options": ["Photoperiodisch", "Autoflowering"], "default": "Photoperiodisch"},
     "speicherzeit":    {"name": "Speicherzeit Messdaten", "icon": "mdi:database-clock", "options": ["Unbegrenzt", "12 Monate", "6 Monate", "3 Monate"], "default": "Unbegrenzt"},
     "graph_zeitraum":  {"name": "Graph-Zeitraum", "icon": "mdi:chart-timeline", "options": ["1 h", "6 h", "12 h", "24 h", "48 h", "7 Tage"], "default": "24 h"},

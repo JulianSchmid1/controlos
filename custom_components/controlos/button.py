@@ -42,3 +42,9 @@ class ControlosButton(ButtonEntity):
             await coord.async_save_override()
         elif self._key == "phase_override_reset":
             await coord.async_reset_override()
+        elif self._key == "strain_add":
+            await coord.async_strain_add()
+        elif self._key == "strain_remove":
+            await coord.async_strain_remove()
+        elif self._key == "grow_neu":
+            await coord.async_grow_neu()
