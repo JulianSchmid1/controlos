@@ -712,9 +712,23 @@ function lichtView(a) {
   const s = slug(a.title);
   const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
   const wp = "switch.controlos_" + s + "_";
-  const lichtVis = { visibility: [{ condition: "state",
-    entity: wp + "vorhanden_licht", state: "on" }] };
+  const cOn = (e) => ({ condition: "state", entity: e, state: "on" });
+  const cEq = (e, st) => ({ condition: "state", entity: e, state: st });
+  const cOr = (...cs) => ({ condition: "or", conditions: cs });
+  const cAnd = (...cs) => ({ condition: "and", conditions: cs });
+  const V = (c, ...conds) => Object.assign(c, { visibility: conds });
+  const lichtVis = { visibility: [cOn(wp + "vorhanden_licht")] };
   const LV = (c) => Object.assign(c, lichtVis);
+  // Dimm-/Rampen-Sichtbarkeit richtet sich nach der ECHTEN Abhaengigkeit:
+  // Zielhelligkeit + Sonnenauf-/-untergangsdauern nutzt auch die
+  // "Undercanopy als Sonne"-Funktion, nicht nur das Hauptlicht.
+  const dl = cOn(wp + "dimmbar_licht");                 // Hauptlicht dimmbar
+  const duc = cAnd(cOn(wp + "vorhanden_undercanopy"),
+                   cOn(wp + "dimmbar_undercanopy"));    // UC dimmbar
+  const anyDim = cOr(dl, duc);                          // irgendetwas dimmbar
+  const mainRamp = cAnd(dl, cEq(sp + "licht_modus", "Sunrise/Sunset"));
+  const ucSun = cAnd(duc, cOn(wp + "undercanopy_als_sonne"));
+  const anyRamp = cOr(mainRamp, ucSun);                // Rampe irgendwo aktiv
   return { title: a.title + " · Licht", path: "bereich-" + s + "-licht",
     icon: "mdi:lightbulb-on", subview: true, theme: THEME,
     type: "sections", max_columns: 2, sections: [
@@ -726,17 +740,19 @@ function lichtView(a) {
         LV({ type: "entities", entities: [
           { entity: "time.controlos_" + s + "_licht_start", name: "Licht an um" },
           { entity: "time.controlos_" + s + "_licht_ende", name: "Licht aus um (bei Zyklus automatisch)" }] }),
-        LV(bslider(np + "licht_helligkeit", "Zielhelligkeit (dimmbar)")),
+        V(bslider(np + "licht_helligkeit", "Zielhelligkeit (dimmbar)"), anyDim),
       ] },
       { type: "grid", cards: [
-        LV(sep("Sonnenauf-/-untergang (dimmbar)", "mdi:weather-sunset")),
-        LV(bsel(sp + "licht_modus", "Schaltmodus (An/Aus oder Rampe)")),
-        LV(bslider(np + "sunrise_dauer", "Sonnenaufgang Dauer")),
-        LV(bslider(np + "sunset_dauer", "Sonnenuntergang Dauer")),
-        Object.assign(
-          bsw(wp + "undercanopy_als_sonne", "Undercanopy als Sonnenauf-/-untergang", "mdi:weather-sunset"),
-          { visibility: [{ condition: "state",
-            entity: wp + "vorhanden_undercanopy", state: "on" }] }),
+        V(sep("Sonnenauf-/-untergang (dimmbar)", "mdi:weather-sunset"), anyDim),
+        // Schaltmodus nur wenn das Hauptlicht ueberhaupt dimmen kann
+        V(bsel(sp + "licht_modus", "Schaltmodus (An/Aus oder Rampe)"), dl),
+        // Rampendauern nur wenn irgendwo eine Rampe laeuft (Hauptlicht im
+        // Sunrise/Sunset-Modus ODER Undercanopy als Sonne)
+        V(bslider(np + "sunrise_dauer", "Sonnenaufgang Dauer"), anyRamp),
+        V(bslider(np + "sunset_dauer", "Sonnenuntergang Dauer"), anyRamp),
+        // UC-als-Sonne nur wenn die Undercanopy vorhanden UND dimmbar ist
+        V(bsw(wp + "undercanopy_als_sonne", "Undercanopy als Sonnenauf-/-untergang",
+              "mdi:weather-sunset"), duc),
       ] },
     ] };
 }
