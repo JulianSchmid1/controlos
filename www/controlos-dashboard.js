@@ -118,11 +118,6 @@ function bbtn(entity, name, icon) {
     tap_action: { action: "call-service", service: "button.press",
       target: { entity_id: entity } } });
 }
-function bnav(name, icon, path) {
-  return applyDesign({ type: "custom:bubble-card", card_type: "button",
-    button_type: "name", name, icon, card_layout: "large",
-    tap_action: { action: "navigate", navigation_path: path } });
-}
 function mg(name, decimals, entities, extra) {
   return Object.assign({ type: "custom:mini-graph-card", name, hours_to_show: 24,
     points_per_hour: 6, line_width: 2, decimals, height: 100, hour24: true,
@@ -739,8 +734,11 @@ function configView(a) {
         Object.assign(bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
           { visibility: [{ condition: "state", entity: sp + "zelt_typ", state: "Growzelt" }] }),
         bsel(sp + "wuchsphase", "Aktuelle Phase (Steuerung)"),
-        bnav("Grow-Kalender öffnen", "mdi:calendar-text",
-          "/" + DASH + "/grow-kalender-" + s),
+        { type: "custom:mushroom-template-card", icon: "mdi:calendar-text",
+          icon_color: "teal", primary: "Grow-Kalender öffnen",
+          secondary: "Phasen-Tagebuch, Notizen & Erinnerungen",
+          tap_action: { action: "navigate",
+            navigation_path: "/" + DASH + "/grow-kalender-" + s } },
         { type: "markdown", content:
           "Grow benennen, Strains & Ernten verwaltest du auf der Seite " +
           "**Grow-Kalender**; Phasen-Profile bearbeiten unter **Klima-Regelung**." },
@@ -887,7 +885,7 @@ function lichtView(a) {
           { entity: "time.controlos_" + s + "_licht_start", name: "Licht an um" },
           { entity: "time.controlos_" + s + "_licht_ende", name: "Licht aus um (bei Zyklus automatisch)" }] }),
         // Zielhelligkeit nur, wenn irgendein Licht (Haupt oder UC) dimmbar ist
-        V(bslider(np + "licht_helligkeit", "Zielhelligkeit (dimmbar)"), anyDim),
+        V(bslider(np + "licht_helligkeit", "Zielhelligkeit (Undercanopy)"), anyDim),
         // Undercanopy-Dimmung: gehoert zu den Licht-Einstellungen
         V(sep("Undercanopy dimmen", "mdi:lightbulb-group"), dvUc),
         V(bsw(wp + "dimmbar_undercanopy", "Undercanopy dimmbar?", "mdi:brightness-6"), dvUc),
@@ -912,14 +910,10 @@ function lichtView(a) {
 function geraeteView(a) {
   const s = slug(a.title);
   const sp = "select.controlos_" + s + "_", wp = "switch.controlos_" + s + "_";
-  const np = "number.controlos_" + s + "_";
   const DIMMBAR = ["befeuchter", "entfeuchter", "heizung", "abluft",
     "licht", "undercanopy", "ventilator"];
   // Undercanopy-Dimmung liegt bei den Licht-Einstellungen, nicht hier
   const DIMMBAR_UI = DIMMBAR.filter((d) => d !== "undercanopy");
-  // Mindestleistung ist nur relevant, wenn ueberhaupt ein Geraet dimmbar ist
-  const anyDimmbar = { condition: "or", conditions: DIMMBAR.map((d) =>
-    ({ condition: "state", entity: wp + "dimmbar_" + d, state: "on" })) };
   return { title: a.title + " · Geräte", path: "bereich-" + s + "-geraete",
     icon: "mdi:power-plug", subview: true, theme: THEME,
     type: "sections", max_columns: 4, sections: [
@@ -948,8 +942,6 @@ function geraeteView(a) {
         ...DIMMBAR_UI.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "dimmbar_" + d, state: "on" }] })),
-        Object.assign(bslider(np + "dimm_mindestleistung",
-          "Dimm-Mindestleistung (%)"), { visibility: [anyDimmbar] }),
         sep("Sensoren (Quellen)", "mdi:access-point"),
         ...SEL_SENSOR.map((k) => bsel(sp + k, null)),
         bsel(sp + "sensor_entfeuchter", "Geräte-Feuchtesensor (Entfeuchter)"),
