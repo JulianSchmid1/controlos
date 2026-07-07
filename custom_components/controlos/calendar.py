@@ -93,35 +93,54 @@ class ControlosCalendar(CalendarEntity):
             if zelt in (None, "Growzelt"):
                 typ = getattr(self._ents().get("grow_typ"),
                               "current_option", None) or "Photoperiodisch"
-                ref_key = "grow_start" if typ == "Autoflowering" else "bluete_start"
-                ref = _as_date(getattr(self._ents().get(ref_key), "native_value", None))
-                if ref is not None:
-                    for st in store.strains(self._entry.entry_id):
-                        tage = _strain_tage(st)
-                        if tage is None:
-                            continue
-                        ernte = ref + timedelta(days=tage)
-                        evs.append(CalendarEvent(
-                            start=ernte, end=ernte + timedelta(days=1),
-                            summary="🌾 Ernte: %s" % (st.get("name") or "?")))
+                auto = typ == "Autoflowering"
+                # Photoperiodisch: gemeinsamer Blüte-Start (12/12). Autoflower:
+                # jeder Strain zählt ab seinem eigenen Anlege-/Startdatum.
+                shared = (None if auto else
+                          _as_date(getattr(self._ents().get("bluete_start"),
+                                           "native_value", None)))
+                for st in store.strains(self._entry.entry_id):
+                    tage = _strain_tage(st)
+                    if tage is None:
+                        continue
+                    ref = _as_date(st.get("added")) if auto else shared
+                    if ref is None:
+                        continue
+                    ernte = ref + timedelta(days=tage)
+                    evs.append(CalendarEvent(
+                        start=ernte, end=ernte + timedelta(days=1),
+                        summary="🌾 Ernte: %s" % (st.get("name") or "?")))
 
-            # Phasen-Zeitraeume aus dem Tagebuch
+            # Phasen-Zeitraeume als Balken - nur im Growzelt (Mutter-/Steckling-
+            # zelt bleiben in einer Phase). Historie konsolidieren: mehrere
+            # Wechsel am selben Tag -> letzter gilt; aufeinanderfolgende
+            # gleiche Phasen -> ein durchgehender Balken.
             g = store.grow(self._entry.entry_id)
-            hist = sorted((h for h in (g.get("history") or [])
-                           if h.get("start")), key=lambda h: h["start"])
-            for i, h in enumerate(hist):
-                start = _as_date(h["start"])
-                if start is None:
-                    continue
-                if i + 1 < len(hist):
-                    end = _as_date(hist[i + 1]["start"]) or start
-                else:
-                    end = heute
-                if end <= start:
-                    end = start
-                evs.append(CalendarEvent(
-                    start=start, end=end + timedelta(days=1),
-                    summary="🌿 %s" % h.get("phase", "?")))
+            if zelt in (None, "Growzelt"):
+                raw = sorted((h for h in (g.get("history") or [])
+                              if h.get("start")), key=lambda h: h["start"])
+                tag = []
+                for h in raw:
+                    d = _as_date(h["start"])
+                    if d is None:
+                        continue
+                    ph = h.get("phase", "?")
+                    if tag and tag[-1][0] == d:
+                        tag[-1] = (d, ph)          # selber Tag -> letzter Wechsel
+                    else:
+                        tag.append((d, ph))
+                phasen = []
+                for d, ph in tag:
+                    if phasen and phasen[-1][1] == ph:
+                        continue                    # gleiche Phase -> verlaengern
+                    phasen.append((d, ph))
+                for i, (start, ph) in enumerate(phasen):
+                    end = phasen[i + 1][0] if i + 1 < len(phasen) else heute
+                    if end <= start:
+                        end = start
+                    evs.append(CalendarEvent(
+                        start=start, end=end + timedelta(days=1),
+                        summary="🌿 %s" % ph))
 
             # Notizen mit Faelligkeitsdatum
             for t in store.todos(self._entry.entry_id):

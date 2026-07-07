@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (DOMAIN, PHASES, SELECT_DEVICE_PARAMS, SELECT_PARAMS,
-                    ZELT_PHASES)
+                    VEG_ZYKLEN, ZELT_PHASES)
 from .entity_base import (ControlosBaseEntity, area_slug, device_info_for,
                           store_entity)
 
@@ -40,6 +40,7 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
     def __init__(self, entry: ConfigEntry, key: str, cfg: dict):
         super().__init__(entry, key, cfg, "select")
         self._attr_options = list(cfg.get("options", []))
+        self._full_options = list(self._attr_options)
         default = cfg.get("default")
         self._attr_current_option = (
             default if default in self._attr_options
@@ -57,14 +58,18 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
                 .get(self._entry.entry_id, {}).get("coordinator"))
 
     def refresh_options(self) -> None:
-        # Wuchsphase + Phasen-Editor: Optionen je Zelt-Typ beschraenken
-        # (Growzelt = alle, Mutterzelt = Vegetation, Stecklingszelt = Klon).
-        if self._key not in ("wuchsphase", "phase_editor"):
+        # Zelt-Typ beschraenkt: wuchsphase/phase_editor auf die erlaubten Phasen,
+        # licht_zyklus im Mutter-/Stecklingszelt auf vegetative Zyklen.
+        if self._key not in ("wuchsphase", "phase_editor", "licht_zyklus"):
             return
         ents = (self.hass.data.get(DOMAIN, {})
                 .get(self._entry.entry_id, {}).get("entities", {}))
         zt = getattr(ents.get("zelt_typ"), "current_option", None)
-        allowed = list(ZELT_PHASES.get(zt, PHASES))
+        if self._key == "licht_zyklus":
+            allowed = (list(VEG_ZYKLEN) if zt in ("Mutterzelt", "Stecklingszelt")
+                       else list(self._full_options))
+        else:
+            allowed = list(ZELT_PHASES.get(zt, self._full_options))
         snap = self._attr_current_option not in allowed
         if allowed == self._attr_options and not snap:
             return
@@ -73,13 +78,13 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
             self._attr_current_option = allowed[0]
             self.async_write_ha_state()
             coord = self._coord()
-            if coord:
-                if self._key == "wuchsphase":
-                    self.hass.async_create_task(
-                        coord.async_on_phase_change(allowed[0]))
-                else:
-                    self.hass.async_create_task(
-                        coord.async_on_phase_editor_change(allowed[0]))
+            if coord and self._key == "wuchsphase":
+                self.hass.async_create_task(
+                    coord.async_on_phase_change(allowed[0]))
+            elif coord and self._key == "phase_editor":
+                self.hass.async_create_task(
+                    coord.async_on_phase_editor_change(allowed[0]))
+            # licht_zyklus: kein Hook noetig (Coordinator leitet Ende im Tick ab)
         else:
             self.async_write_ha_state()
 

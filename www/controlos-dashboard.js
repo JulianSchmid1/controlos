@@ -118,6 +118,11 @@ function bbtn(entity, name, icon) {
     tap_action: { action: "call-service", service: "button.press",
       target: { entity_id: entity } } });
 }
+function bnav(name, icon, path) {
+  return applyDesign({ type: "custom:bubble-card", card_type: "button",
+    button_type: "name", name, icon, card_layout: "large",
+    tap_action: { action: "navigate", navigation_path: path } });
+}
 function mg(name, decimals, entities, extra) {
   return Object.assign({ type: "custom:mini-graph-card", name, hours_to_show: 24,
     points_per_hour: 6, line_width: 2, decimals, height: 100, hour24: true,
@@ -342,10 +347,15 @@ function monitorView(a, hass) {
         })(),
         sep("Grow-Kalender", "mdi:calendar-month"),
         (() => {
-          const typSt = hass.states[sp + "grow_typ"];
-          const auto = typSt && typSt.state === "Autoflowering";
-          const rows = [{ entity: "date.controlos_" + s + "_grow_start", name: "Grow-Start" }];
-          if (auto) {
+          const zt = (hass.states[sp + "zelt_typ"] || {}).state;
+          const nonGrow = zt === "Mutterzelt" || zt === "Stecklingszelt";
+          const rows = [{ entity: "date.controlos_" + s + "_grow_start",
+            name: nonGrow ? "Start / Schnitt" : "Grow-Start" }];
+          if (nonGrow) {
+            // Mutter-/Stecklingszelt: nur Alter + Phasentag, keine Blüte
+            rows.push({ entity: G + "grow_tag", name: "Alter (Tage)" });
+            rows.push({ entity: G + "phase_tag", name: "Tag in Phase" });
+          } else if ((hass.states[sp + "grow_typ"] || {}).state === "Autoflowering") {
             rows.push({ entity: G + "grow_tag", name: "Grow/Blüte-Tag" });
             rows.push({ entity: G + "phase_tag", name: "Tag in Phase" });
           } else {
@@ -596,25 +606,29 @@ function kalenderView(a) {
   const G = "sensor.controlos_" + s + "_";
   const sp = "select.controlos_" + s + "_";
   const bp = "button.controlos_" + s + "_";
-  // Strain-Liste: Growzelt zeigt Erntedatum (Photo: Blüte-Start, Auto:
-  // Grow-Start + Blütezeit), Mutter-/Stecklingszelt zeigen das Alter in Tagen.
+  // Strain-Liste: Mutter/Steckling = Alter in Tagen; Growzelt Photoperiodisch =
+  // Ernte ab gemeinsamem Blüte-Start; Growzelt Autoflower = je Strain ab seinem
+  // eigenen Anlege-Datum (Blüte-Tag + Ernte pro Sorte).
   const strainList =
     "{% set st = state_attr('" + G + "grow_tag','strains') or [] %}\n" +
     "{% set zt = states('" + sp + "zelt_typ') %}\n" +
-    "{% set typ = states('" + sp + "grow_typ') %}\n" +
-    "{% set ref = states('date.controlos_" + s + "_grow_start') if typ == 'Autoflowering' " +
-    "else states('date.controlos_" + s + "_bluete_start') %}\n" +
+    "{% set auto = states('" + sp + "grow_typ') == 'Autoflowering' %}\n" +
+    "{% set bstart = states('date.controlos_" + s + "_bluete_start') %}\n" +
     "{% if st %}{% for e in st %}" +
     "{% set wert = e.get('wert', e.get('wochen', 0)) | int %}" +
     "{% set einh = e.get('einheit', 'Wochen') %}" +
     "{% set tage = wert * 7 if einh == 'Wochen' else wert %}" +
-    "{% if zt == 'Growzelt' or zt in ['unknown','unavailable'] %}" +
-    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
-    "{% if ref not in ['unknown','unavailable','',None] %} → 🌾 Ernte ~ " +
-    "{{ (as_datetime(ref) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
-    "{% else %}" +
+    "{% if zt in ['Mutterzelt','Stecklingszelt'] %}" +
     "- **{{ e.name }}** — 🌱 {% if e.added %}{{ (now().date() - as_datetime(e.added).date()).days + 1 }} Tage alt (seit {{ e.added }})" +
     "{% else %}Alter unbekannt{% endif %}\n" +
+    "{% elif auto %}" +
+    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
+    "{% if e.added %} · 🌸 Tag {{ (now().date() - as_datetime(e.added).date()).days + 1 }} → 🌾 Ernte ~ " +
+    "{{ (as_datetime(e.added) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
+    "{% else %}" +
+    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
+    "{% if bstart not in ['unknown','unavailable','',None] %} → 🌾 Ernte ~ " +
+    "{{ (as_datetime(bstart) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
     "{% endif %}" +
     "{% endfor %}{% else %}_Noch keine Einträge._{% endif %}";
   const archiv =
@@ -641,9 +655,14 @@ function kalenderView(a) {
           grid_options: { columns: "full", rows: 6 } },
       ] },
       (() => {
-        // Nur im Growzelt gibt es Grow-Typ/Blüte-Start/Blütezeit/Ernte.
+        // Nur im Growzelt gibt es Grow-Typ/Blütezeit/Ernte.
         const growOnly = { visibility: [{ condition: "state",
           entity: sp + "zelt_typ", state: "Growzelt" }] };
+        // Blüte-Start nur bei Growzelt + Photoperiodisch (Autoflower zählt je
+        // Strain ab dem eigenen Startdatum).
+        const photoOnly = { visibility: [
+          { condition: "state", entity: sp + "zelt_typ", state: "Growzelt" },
+          { condition: "state", entity: sp + "grow_typ", state: "Photoperiodisch" }] };
         return { type: "grid", cards: [
           sep("Grow-Verwaltung", "mdi:sprout"),
           { type: "entities", entities: [
@@ -651,9 +670,10 @@ function kalenderView(a) {
             { entity: sp + "zelt_typ", name: "Zelt-Typ" },
             { entity: "date.controlos_" + s + "_grow_start", name: "Start" }] },
           Object.assign({ type: "entities", entities: [
-            { entity: sp + "grow_typ", name: "Grow-Typ" },
+            { entity: sp + "grow_typ", name: "Grow-Typ" }] }, growOnly),
+          Object.assign({ type: "entities", entities: [
             { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Start" }] },
-            growOnly),
+            photoOnly),
           bbtn(bp + "grow_neu", "Neuen Grow / Batch starten", "mdi:sprout"),
           sep("Strains / Pflanzen", "mdi:cannabis"),
           { type: "entities", entities: [
@@ -712,8 +732,11 @@ function configView(a) {
         bsel(sp + "betriebsmodus", "Betriebsmodus (Monitor/Steuern)"),
         bsel(sp + "zelt_typ", "Zelt-Typ (Grow / Mutter / Steckling)"),
         sep("Wuchsphase & Grow", "mdi:sprout-outline"),
-        bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
+        Object.assign(bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
+          { visibility: [{ condition: "state", entity: sp + "zelt_typ", state: "Growzelt" }] }),
         bsel(sp + "wuchsphase", "Aktuelle Phase (Steuerung)"),
+        bnav("Grow-Kalender öffnen", "mdi:calendar-text",
+          "/" + DASH + "/grow-kalender-" + s),
         { type: "markdown", content:
           "Grow benennen, Strains & Ernten verwaltest du auf der Seite " +
           "**Grow-Kalender**; Phasen-Profile bearbeiten unter **Klima-Regelung**." },

@@ -45,6 +45,8 @@ ZELT_PHASES = {
     "Mutterzelt": ["Vegetation"],
     "Stecklingszelt": ["Keimling / Klon"],
 }
+# Mutter-/Stecklingszelt: nur vegetative Lichtzyklen (kein 12/12-Blüteumschalten)
+VEG_ZYKLEN = ["16/8", "18/6", "20/4", "22/2"]
 PHASE_KEYS = ["ziel_temp_tag", "ziel_temp_nacht", "temp_toleranz",
               "ziel_feuchte_tag", "ziel_feuchte_nacht", "feuchte_toleranz",
               "vpd_ziel", "vpd_toleranz", "co2_ziel", "co2_toleranz"]
@@ -179,7 +181,7 @@ for _d in _DIMMBAR:
 # ---------------------------------------------------------------------------
 SELECT_PARAMS = {
     "betriebsmodus":   {"name": "Betriebsmodus", "icon": "mdi:shield-check", "options": ["Monitor", "Steuern"], "default": "Monitor"},
-    "licht_zyklus":    {"name": "Lichtzyklus", "icon": "mdi:sun-clock", "options": ["Manuell", "24/0", "20/4", "18/6", "16/8", "14/10", "12/12", "10/14"], "default": "18/6"},
+    "licht_zyklus":    {"name": "Lichtzyklus", "icon": "mdi:sun-clock", "options": ["Manuell", "24/0", "22/2", "20/4", "18/6", "16/8", "14/10", "12/12", "10/14"], "default": "18/6"},
     "licht_modus":     {"name": "Licht Schaltmodus", "icon": "mdi:weather-sunset", "options": ["An/Aus", "Sonnenauf-/-untergang"], "default": "An/Aus"},
     "klima_modus":     {"name": "Klima Modus",     "icon": "mdi:thermostat", "options": ["VPD", "Statisch"], "default": "VPD"},
     "system_modus":    {"name": "System Modus",    "icon": "mdi:tent", "options": ["Geschlossenes System", "Offenes System"], "default": "Geschlossenes System"},
