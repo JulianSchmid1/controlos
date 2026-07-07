@@ -20,6 +20,7 @@ from .entity_base import area_slug, device_info_for
 DATE_PARAMS = {
     "grow_start":   {"name": "Grow-Startdatum",  "icon": "mdi:calendar-start"},
     "bluete_start": {"name": "Blüte-Startdatum", "icon": "mdi:flower"},
+    "strain_start": {"name": "Strain-Startdatum", "icon": "mdi:calendar-plus"},
 }
 
 

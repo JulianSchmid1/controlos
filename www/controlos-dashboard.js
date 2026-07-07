@@ -618,15 +618,16 @@ function kalenderView(a) {
     "{% set wert = e.get('wert', e.get('wochen', 0)) | int %}" +
     "{% set einh = e.get('einheit', 'Wochen') %}" +
     "{% set tage = wert * 7 if einh == 'Wochen' else wert %}" +
+    "{% set ref = e.get('start', e.get('added')) %}" +
     "{% if zt in ['Mutterzelt','Stecklingszelt'] %}" +
-    "- **{{ e.name }}** — 🌱 {% if e.added %}{{ (now().date() - as_datetime(e.added).date()).days + 1 }} Tage alt (seit {{ e.added }})" +
+    "- **{{ e.name }}** — 🌱 {% if ref %}{{ (now().date() - as_datetime(ref).date()).days + 1 }} Tage alt (seit {{ ref }})" +
     "{% else %}Alter unbekannt{% endif %}\n" +
     "{% elif auto %}" +
     "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
-    "{% if e.added %} · 🌸 Tag {{ (now().date() - as_datetime(e.added).date()).days + 1 }} → 🌾 Ernte ~ " +
-    "{{ (as_datetime(e.added) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
+    "{% if ref %} · 🌸 Tag {{ (now().date() - as_datetime(ref).date()).days + 1 }} (ab {{ ref }}) → 🌾 Ernte ~ " +
+    "{{ (as_datetime(ref) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
     "{% else %}" +
-    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
+    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}{% if ref %} · gepflanzt {{ ref }}{% endif %}" +
     "{% if bstart not in ['unknown','unavailable','',None] %} → 🌾 Ernte ~ " +
     "{{ (as_datetime(bstart) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
     "{% endif %}" +
@@ -650,9 +651,11 @@ function kalenderView(a) {
     type: "sections", max_columns: 2, sections: [
       { type: "grid", column_span: 2, cards: [
         sep("Kalender", "mdi:calendar-month"),
+        // Höhere Karte, damit Mehrtages-Balken (Phasen/Sorten) nicht zu
+        // „+ weitere N" kollabieren, sondern als Balken sichtbar sind.
         { type: "calendar", initial_view: "dayGridMonth",
           entities: ["calendar.controlos_" + s + "_kalender"],
-          grid_options: { columns: "full", rows: 6 } },
+          grid_options: { columns: "full", rows: 12 } },
       ] },
       (() => {
         // Nur im Growzelt gibt es Grow-Typ/Blütezeit/Ernte.
@@ -677,7 +680,8 @@ function kalenderView(a) {
           bbtn(bp + "grow_neu", "Neuen Grow / Batch starten", "mdi:sprout"),
           sep("Strains / Pflanzen", "mdi:cannabis"),
           { type: "entities", entities: [
-            { entity: "text.controlos_" + s + "_strain_name", name: "Sorte / Name" }] },
+            { entity: "text.controlos_" + s + "_strain_name", name: "Sorte / Name" },
+            { entity: "date.controlos_" + s + "_strain_start", name: "Start / Pflanzdatum" }] },
           Object.assign({ type: "entities", entities: [
             { entity: sp + "bluetezeit_einheit", name: "Blütezeit-Einheit" },
             { entity: "number.controlos_" + s + "_strain_bluetezeit", name: "Blütezeit" }] },
@@ -959,7 +963,20 @@ function geraeteView(a) {
 function systemView(a) {
   const s = slug(a.title);
   const np = "number.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
-  const wp = "switch.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_", bp = "button.controlos_" + s + "_";
+  const G = "sensor.controlos_" + s + "_";
+  const cEq = (e, st) => ({ condition: "state", entity: e, state: st });
+  const cOn = (e) => ({ condition: "state", entity: e, state: "on" });
+  const sNot = (sensor) => ({ condition: "state", entity: sp + sensor, state_not: "Keine" });
+  const V = (c, ...conds) => Object.assign(c, { visibility: conds });
+  const auswahl = cEq(sp + "benachrichtigung_modus", "Auswahl");
+  // VPD-Alarm/-Puffer nur bei ableitbarem VPD (Temp+Feuchte) und VPD-Modus
+  const vpdOk = [sNot("sensor_temp_luft"), sNot("sensor_feuchte_luft"),
+    cEq(sp + "klima_modus", "VPD")];
+  const zielListe =
+    "{% set t = state_attr('" + G + "grow_tag','notify_targets') or [] %}\n" +
+    "{% if t %}{% for d in t %}- 📱 {{ d.replace('mobile_app_','') }}\n" +
+    "{% endfor %}{% else %}_Kein Gerät gewählt — Meldungen gehen an alle._{% endif %}";
   return { title: a.title + " · System", path: "bereich-" + s + "-system",
     icon: "mdi:bell-cog", subview: true, theme: THEME,
     type: "sections", max_columns: 2, sections: [
@@ -969,13 +986,35 @@ function systemView(a) {
         bslider(np + "mqtt_watchdog_min", "Nach X Minuten ohne Daten"),
         sep("Speicher & KI", "mdi:database"),
         bsel(sp + "speicherzeit", "Speicherzeit Messdaten (KI-Archiv)"),
-        bstate("sensor.controlos_" + s + "_ki_status", "KI Status", "mdi:brain"),
+        bstate(G + "ki_status", "KI Status", "mdi:brain"),
       ] },
       { type: "grid", cards: [
         sep("Benachrichtigungen", "mdi:bell"),
-        bsw(wp + "benachrichtigungen", "Push + HA-Meldung (Tank, CO2, Sensor, Notizen)", "mdi:bell"),
-        bsel(sp + "benachrichtigung_ziel", "Ziel-Gerät (Push)"),
-        bslider(np + "co2_alarm_max", "CO2-Alarm ab"),
+        bsw(wp + "benachrichtigungen", "Benachrichtigungen aktiv", "mdi:bell"),
+        bsel(sp + "benachrichtigung_modus", "Ziel: Alle Geräte / Auswahl"),
+        V(bsel(sp + "benachrichtigung_geraet", "Zielgerät wählen"), auswahl),
+        V(bbtn(bp + "benachrichtigung_add", "Gerät hinzufügen", "mdi:cellphone-check"), auswahl),
+        V({ type: "markdown", content: zielListe }, auswahl),
+        V(bsel(sp + "benachrichtigung_entfernen", "Gerät zum Entfernen"), auswahl),
+        V(bbtn(bp + "benachrichtigung_remove", "Gewähltes entfernen", "mdi:cellphone-remove"), auswahl),
+      ] },
+      { type: "grid", cards: [
+        sep("Welche Meldungen? (nur vorhandene)", "mdi:bell-check"),
+        V(bsw(wp + "notify_tank", "Tank voll", "mdi:bell"), sNot("sensor_tank")),
+        V(bsw(wp + "notify_co2", "CO2-Alarm", "mdi:bell"), cOn(wp + "vorhanden_co2")),
+        bsw(wp + "notify_geraet", "Geräte-Ausfall", "mdi:bell"),
+        V(bsw(wp + "notify_sensor", "Sensor-Ausfall", "mdi:bell"), sNot("sensor_temp_luft")),
+        bsw(wp + "notify_notizen", "Fällige Notizen", "mdi:bell"),
+        V(bsw(wp + "notify_temp", "Temperatur-Alarm", "mdi:bell"), sNot("sensor_temp_luft")),
+        V(bsw(wp + "notify_feuchte", "Feuchte-Alarm", "mdi:bell"), sNot("sensor_feuchte_luft")),
+        V(bsw(wp + "notify_vpd", "VPD-Alarm", "mdi:bell"), ...vpdOk),
+      ] },
+      { type: "grid", cards: [
+        sep("Alarm-Schwellen", "mdi:alert-outline"),
+        V(bslider(np + "co2_alarm_max", "CO2-Alarm ab"), cOn(wp + "vorhanden_co2")),
+        V(bslider(np + "temp_alarm_margin", "Temp-Alarm-Puffer (über Toleranz)"), sNot("sensor_temp_luft")),
+        V(bslider(np + "feuchte_alarm_margin", "Feuchte-Alarm-Puffer"), sNot("sensor_feuchte_luft")),
+        V(bslider(np + "vpd_alarm_margin", "VPD-Alarm-Puffer"), ...vpdOk),
       ] },
     ] };
 }

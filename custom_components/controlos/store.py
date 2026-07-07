@@ -20,7 +20,7 @@ class ControlosStore:
     def __init__(self, hass: HomeAssistant):
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.data: dict = {"std": {}, "override": {}, "grow": {},
-                           "todo": {}, "events": {}}
+                           "todo": {}, "events": {}, "notify": {}}
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
@@ -29,7 +29,8 @@ class ControlosStore:
                          "override": data.get("override", {}),
                          "grow": data.get("grow", {}),
                          "todo": data.get("todo", {}),
-                         "events": data.get("events", {})}
+                         "events": data.get("events", {}),
+                         "notify": data.get("notify", {})}
 
     def _save(self) -> None:
         self._store.async_delay_save(lambda: self.data, 2)
@@ -75,11 +76,12 @@ class ControlosStore:
         return list(self.grow(entry_id).get("strains") or [])
 
     def add_strain(self, entry_id: str, name: str, wert: int,
-                   einheit: str = "Wochen") -> None:
+                   einheit: str = "Wochen", start: str | None = None) -> None:
+        heute = date.today().isoformat()
         g = self.grow(entry_id)
         g.setdefault("strains", []).append(
             {"name": str(name or "?").strip(), "wert": int(wert),
-             "einheit": einheit, "added": date.today().isoformat()})
+             "einheit": einheit, "start": start or heute, "added": heute})
         self._save()
 
     def remove_strain(self, entry_id: str, index: int) -> None:
@@ -103,6 +105,24 @@ class ControlosStore:
 
     def grow_archive(self, entry_id: str) -> list:
         return list(self.grow(entry_id).get("archive") or [])
+
+    # -- Benachrichtigungs-Zielgeraete (Auswahl) --
+    def notify_targets(self, entry_id: str) -> list:
+        return list(self.data.setdefault("notify", {}).get(entry_id, []))
+
+    def add_notify_target(self, entry_id: str, dienst: str) -> None:
+        lst = self.notify_targets(entry_id)
+        if dienst and dienst not in lst:
+            lst.append(dienst)
+            self.data.setdefault("notify", {})[entry_id] = lst
+            self._save()
+
+    def remove_notify_target(self, entry_id: str, index: int) -> None:
+        lst = self.notify_targets(entry_id)
+        if 0 <= index < len(lst):
+            lst.pop(index)
+            self.data.setdefault("notify", {})[entry_id] = lst
+            self._save()
 
     def set_phase_start(self, entry_id: str, phase: str, date_iso: str) -> None:
         g = self.grow(entry_id)
@@ -132,4 +152,5 @@ class ControlosStore:
         self.data["grow"].pop(entry_id, None)
         self.data.setdefault("todo", {}).pop(entry_id, None)
         self.data.setdefault("events", {}).pop(entry_id, None)
+        self.data.setdefault("notify", {}).pop(entry_id, None)
         self._save()

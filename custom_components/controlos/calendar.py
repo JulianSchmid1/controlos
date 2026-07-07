@@ -103,7 +103,8 @@ class ControlosCalendar(CalendarEntity):
                     tage = _strain_tage(st)
                     if tage is None:
                         continue
-                    ref = _as_date(st.get("added")) if auto else shared
+                    ref = (_as_date(st.get("start") or st.get("added"))
+                           if auto else shared)
                     if ref is None:
                         continue
                     ernte = ref + timedelta(days=tage)
@@ -141,6 +142,18 @@ class ControlosCalendar(CalendarEntity):
                     evs.append(CalendarEvent(
                         start=start, end=end + timedelta(days=1),
                         summary="🌿 %s" % ph))
+            else:
+                # Mutter-/Stecklingszelt: keine Phasen, sondern je Sorte ein
+                # Balken vom Anlege-Datum bis heute (Lebensdauer der Pflanzen).
+                icon = "🌿" if zelt == "Mutterzelt" else "🌱"
+                for st in store.strains(self._entry.entry_id):
+                    start = _as_date(st.get("start") or st.get("added"))
+                    if start is None:
+                        continue
+                    end = heute if heute > start else start
+                    evs.append(CalendarEvent(
+                        start=start, end=end + timedelta(days=1),
+                        summary="%s %s" % (icon, st.get("name") or "?")))
 
             # Notizen mit Faelligkeitsdatum
             for t in store.todos(self._entry.entry_id):

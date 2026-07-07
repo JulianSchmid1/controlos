@@ -82,6 +82,8 @@ BUTTON_PARAMS = {
     "strain_add":    {"name": "Strain hinzufügen",         "icon": "mdi:plus-circle"},
     "strain_remove": {"name": "Gewählten Strain entfernen", "icon": "mdi:minus-circle"},
     "grow_neu":      {"name": "Neuen Grow starten",         "icon": "mdi:sprout"},
+    "benachrichtigung_add":    {"name": "Zielgerät hinzufügen",         "icon": "mdi:cellphone-check"},
+    "benachrichtigung_remove": {"name": "Gewähltes Zielgerät entfernen", "icon": "mdi:cellphone-remove"},
 }
 
 # ---------------------------------------------------------------------------
@@ -104,6 +106,10 @@ NUMBER_PARAMS = {
     "licht_helligkeit": {"name": "Licht Helligkeit", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:brightness-6", "default": 100},
     "mqtt_watchdog_min": {"name": "MQTT-Watchdog Zeitfenster", "min": 0, "max": 60, "step": 1, "unit": "min", "icon": "mdi:timer-alert", "default": 10},
     "co2_alarm_max": {"name": "CO2-Alarm ab", "min": 800, "max": 3000, "step": 50, "unit": "ppm", "icon": "mdi:molecule-co2", "default": 1500},
+    # -- Klima-Alarm-Margins (Alarm ab Sollwert +- (Toleranz + Margin)) --
+    "temp_alarm_margin":    {"name": "Temp-Alarm-Puffer",    "min": 0, "max": 15, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-alert", "default": 3},
+    "feuchte_alarm_margin": {"name": "Feuchte-Alarm-Puffer", "min": 0, "max": 40, "step": 1, "unit": "%", "icon": "mdi:water-alert", "default": 15},
+    "vpd_alarm_margin":     {"name": "VPD-Alarm-Puffer",     "min": 0, "max": 1.5, "step": 0.05, "unit": "kPa", "icon": "mdi:water-alert", "default": 0.5},
     "sunrise_dauer": {"name": "Sonnenaufgang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-up", "default": 30},
     "sunset_dauer":  {"name": "Sonnenuntergang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-down", "default": 30},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
@@ -164,6 +170,15 @@ SWITCH_PARAMS = {
     "benachrichtigungen": {"name": "Benachrichtigungen", "icon": "mdi:bell", "default": True},
     "nacht_statisch": {"name": "Nachts statisch regeln", "icon": "mdi:weather-night", "default": False},
     "co2_automatik":  {"name": "CO2 Automatik",        "icon": "mdi:robot-outline", "default": False},
+    # -- Einzel-Toggles je Benachrichtigung (nur wirksam bei Master an) --
+    "notify_tank":    {"name": "Meldung: Tank voll",        "icon": "mdi:bell", "default": True},
+    "notify_co2":     {"name": "Meldung: CO2-Alarm",        "icon": "mdi:bell", "default": True},
+    "notify_geraet":  {"name": "Meldung: Geräte-Ausfall",   "icon": "mdi:bell", "default": True},
+    "notify_sensor":  {"name": "Meldung: Sensor-Ausfall",   "icon": "mdi:bell", "default": True},
+    "notify_notizen": {"name": "Meldung: fällige Notizen",  "icon": "mdi:bell", "default": True},
+    "notify_temp":    {"name": "Meldung: Temperatur-Alarm", "icon": "mdi:bell", "default": True},
+    "notify_feuchte": {"name": "Meldung: Feuchte-Alarm",    "icon": "mdi:bell", "default": True},
+    "notify_vpd":     {"name": "Meldung: VPD-Alarm",        "icon": "mdi:bell", "default": True},
     "dual_befeuchter":  {"name": "Befeuchter Dual-Mode", "icon": "mdi:target", "default": False},
     "dual_entfeuchter": {"name": "Entfeuchter Dual-Mode", "icon": "mdi:target", "default": False},
     "undercanopy_als_sonne": {"name": "Undercanopy als Sonnenauf-/-untergang", "icon": "mdi:weather-sunset", "default": False},
@@ -193,6 +208,7 @@ SELECT_PARAMS = {
     "grow_typ":        {"name": "Grow-Typ", "icon": "mdi:dna", "options": ["Photoperiodisch", "Autoflowering"], "default": "Photoperiodisch"},
     "zelt_typ":        {"name": "Zelt-Typ", "icon": "mdi:home-group", "options": ZELT_TYPEN, "default": "Growzelt"},
     "bluetezeit_einheit": {"name": "Blütezeit-Einheit", "icon": "mdi:calendar-clock", "options": ["Wochen", "Tage"], "default": "Wochen"},
+    "benachrichtigung_modus": {"name": "Benachrichtigung an", "icon": "mdi:cellphone-message", "options": ["Alle Geräte", "Auswahl"], "default": "Alle Geräte"},
     "speicherzeit":    {"name": "Speicherzeit Messdaten", "icon": "mdi:database-clock", "options": ["Unbegrenzt", "12 Monate", "6 Monate", "3 Monate"], "default": "Unbegrenzt"},
     "graph_zeitraum":  {"name": "Graph-Zeitraum", "icon": "mdi:chart-timeline", "options": ["1 h", "6 h", "12 h", "24 h", "48 h", "7 Tage"], "default": "24 h"},
     "co2_betrieb_modus": {"name": "CO2 Betriebsmodus", "icon": "mdi:molecule-co2", "options": ["Dauerbetrieb", "Intervall"], "default": "Dauerbetrieb"},

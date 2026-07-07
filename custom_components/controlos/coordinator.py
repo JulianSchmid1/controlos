@@ -328,6 +328,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
             data["_history"] = list(g.get("history") or [])
             data["_strains"] = list(g.get("strains") or [])
             data["_grow_archive"] = list(g.get("archive") or [])
+            data["_notify_targets"] = store.notify_targets(self.entry.entry_id)
 
             # -- Bluetetage (je Grow-Typ) --
             # Quelle ist das Datumsfeld "Blüte-Startdatum" (manuell korrigier-
@@ -429,6 +430,20 @@ class ControlosCoordinator(DataUpdateCoordinator):
         now = _time.time()
         name = self.entry.title
 
+        def _ziel_dienste() -> list:
+            """Zieldienste je Modus: 'Alle Geräte' -> notify.notify, sonst die
+            ausgewaehlte Geraeteliste (Fallback notify.notify, wenn leer)."""
+            modus = ctx.sel_raw("benachrichtigung_modus") or "Alle Geräte"
+            dienste = []
+            if modus == "Auswahl":
+                store = self._store()
+                dienste = [d for d in (store.notify_targets(self.entry.entry_id)
+                                       if store else [])
+                           if self.hass.services.has_service("notify", d)]
+            if not dienste and self.hass.services.has_service("notify", "notify"):
+                dienste = ["notify"]
+            return dienste
+
         async def melde(key, titel, text, cooldown=3600):
             if now - self._alerts.get(key, 0) < cooldown:
                 return
@@ -439,12 +454,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                  "notification_id": "controlos_%s_%s" % (
                      area_slug(name), key.split("_")[0])},
                 blocking=False)
-            # Ziel: gewaehltes Geraet oder alle (notify.notify)
-            ziel = ctx.sel_raw("benachrichtigung_ziel") or "Alle Geräte"
-            dienst = (ziel if ziel != "Alle Geräte"
-                      and self.hass.services.has_service("notify", ziel)
-                      else "notify")
-            if self.hass.services.has_service("notify", dienst):
+            for dienst in _ziel_dienste():
                 await self.hass.services.async_call(
                     "notify", dienst,
                     {"title": titel, "message": text}, blocking=False)
@@ -452,7 +462,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         # Entfeuchter-Tank voll
         tank_eid = ctx.sel("sensor_tank")
         tank = bool(tank_eid) and ctx.state(tank_eid) == "on"
-        if tank and not self._alert_on.get("tank"):
+        if tank and not self._alert_on.get("tank") and ctx.sw("notify_tank"):
             await melde("tank", "🚰 ControlOS: Tank voll",
                         "[%s] Entfeuchter-Tank ist voll — bitte leeren, "
                         "das Entfeuchten pausiert." % name)
@@ -462,7 +472,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         co2 = data.get("data_co2")
         co2_max = ctx.num("co2_alarm_max", 1500)
         zu_hoch = co2 is not None and co2_max > 0 and co2 > co2_max
-        if zu_hoch and not self._alert_on.get("co2"):
+        if zu_hoch and not self._alert_on.get("co2") and ctx.sw("notify_co2"):
             await melde("co2", "⚠️ ControlOS: CO2 zu hoch",
                         "[%s] CO2 bei %.0f ppm (Alarm ab %.0f ppm)." % (
                             name, co2, co2_max))
@@ -474,7 +484,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
             defekt = bool(geid) and ctx.state(geid) in (None, "unavailable",
                                                         "unknown")
             akey = "dev_%s" % gname
-            if defekt and not self._alert_on.get(akey):
+            if defekt and not self._alert_on.get(akey) and ctx.sw("notify_geraet"):
                 await melde(akey, "⚠️ ControlOS: Gerät ausgefallen",
                             "[%s] %s (%s) ist nicht mehr erreichbar — "
                             "Regelung behandelt es als nicht vorhanden." % (
@@ -484,11 +494,39 @@ class ControlosCoordinator(DataUpdateCoordinator):
         # Klimasensor liefert nichts mehr
         ausfall = (bool(ctx.sel("sensor_temp_luft"))
                    and data.get("data_temp_luft") is None)
-        if ausfall and not self._alert_on.get("sensor"):
+        if ausfall and not self._alert_on.get("sensor") and ctx.sw("notify_sensor"):
             await melde("sensor", "📡 ControlOS: Sensor-Ausfall",
                         "[%s] Der Klimasensor liefert keine Daten — "
                         "MQTT-Watchdog kümmert sich, bitte prüfen." % name)
         self._alert_on["sensor"] = ausfall
+
+        # -- Klima-Alarme (eigene Schwellen: Ziel +- (Toleranz + Margin)), 24/7 --
+        async def klima_alarm(akey, wert, ziel, band, toggle, icon,
+                              label, einheit):
+            aus = (wert is not None and ziel is not None and band > 0
+                   and abs(wert - ziel) > band)
+            if (aus and not self._alert_on.get(akey) and ctx.sw(toggle)):
+                await melde(akey, "%s ControlOS: %s außerhalb" % (icon, label),
+                            "[%s] %s %.1f%s (Ziel %.1f%s, Alarm ab ±%.1f%s)." % (
+                                name, label, wert, einheit, ziel, einheit,
+                                band, einheit))
+            self._alert_on[akey] = aus
+
+        await klima_alarm(
+            "ktemp", data.get("data_temp_luft"), data.get("data_ziel_temp"),
+            ctx.num("temp_toleranz", 0.5) + ctx.num("temp_alarm_margin", 3),
+            "notify_temp", "🌡️", "Temperatur", "°C")
+        await klima_alarm(
+            "kfeuchte", data.get("data_feuchte_luft"), data.get("data_ziel_feuchte"),
+            ctx.num("feuchte_toleranz", 5) + ctx.num("feuchte_alarm_margin", 15),
+            "notify_feuchte", "💧", "Feuchte", "%")
+        if (ctx.sel_raw("klima_modus") or "VPD") == "VPD":
+            await klima_alarm(
+                "kvpd", data.get("data_vpd"), ctx.num("vpd_ziel", 1.2),
+                ctx.num("vpd_toleranz", 0.2) + ctx.num("vpd_alarm_margin", 0.5),
+                "notify_vpd", "💨", "VPD", " kPa")
+        else:
+            self._alert_on["kvpd"] = False
 
         # Faellige Notizen. Steuerwoerter in Titel/Beschreibung:
         #   (nichts)      -> einmalig am Faelligkeitstag
@@ -496,7 +534,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         #   !wöchentlich  -> alle 7 Tage
         #   !stumm        -> nie benachrichtigen
         store = self._store()
-        if store:
+        if store and ctx.sw("notify_notizen"):
             heute = date.today()
             heute_iso = heute.isoformat()
             items = store.todos(self.entry.entry_id)
@@ -780,12 +818,15 @@ class ControlosCoordinator(DataUpdateCoordinator):
         ctx = _Ctx(self.hass, ents)
         name_e = ents.get("strain_name")
         wert_e = ents.get("strain_bluetezeit")
+        start_e = ents.get("strain_start")
         name = (getattr(name_e, "native_value", "") or "").strip()
         wert = int(getattr(wert_e, "native_value", 9) or 9)
         einheit = ctx.sel_raw("bluetezeit_einheit") or "Wochen"
+        sv = getattr(start_e, "native_value", None)
+        start = sv.isoformat() if isinstance(sv, date) else None
         if not name:
             return
-        store.add_strain(self.entry.entry_id, name, wert, einheit)
+        store.add_strain(self.entry.entry_id, name, wert, einheit, start)
         if name_e is not None:
             await name_e.async_set_value("")
         await self.async_request_refresh()
@@ -821,12 +862,43 @@ class ControlosCoordinator(DataUpdateCoordinator):
             "strains": store.strains(self.entry.entry_id),
         }
         store.archive_grow(self.entry.entry_id, snapshot)
-        # Frischer Grow: Start = heute, Blüte-Start leeren
+        # Frischer Grow: Start = heute, Blüte-Start leeren; Strain-Startdatum an
+        # den Grow-Start koppeln (direkt angelegte Strains starten mit dem Grow).
         if gstart_e is not None:
             gstart_e.set_internal(date.today())
         if bstart_e is not None:
             bstart_e.set_internal(None)
+        sstart_e = ents.get("strain_start")
+        if sstart_e is not None:
+            sstart_e.set_internal(date.today())
         sel = ents.get("strain_auswahl")
         if sel is not None:
             sel.refresh_options()
+        await self.async_request_refresh()
+
+    # -- Benachrichtigungs-Zielgeraete --
+    async def async_notify_add(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        picker = ents.get("benachrichtigung_geraet")
+        if store is None or picker is None:
+            return
+        dienst = picker.selected_service()
+        if dienst:
+            store.add_notify_target(self.entry.entry_id, dienst)
+            rem = ents.get("benachrichtigung_entfernen")
+            if rem is not None:
+                rem.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_notify_remove(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        rem = ents.get("benachrichtigung_entfernen")
+        if store is None or rem is None:
+            return
+        idx = rem.selected_index()
+        if 0 <= idx < len(store.notify_targets(self.entry.entry_id)):
+            store.remove_notify_target(self.entry.entry_id, idx)
+            rem.refresh_options()
         await self.async_request_refresh()

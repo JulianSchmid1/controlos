@@ -30,6 +30,7 @@ async def async_setup_entry(
     ents = [ControlosSelect(entry, k, c) for k, c in SELECT_PARAMS.items()]
     ents += [ControlosDeviceSelect(entry, k, c) for k, c in SELECT_DEVICE_PARAMS.items()]
     ents.append(NotifyTargetSelect(entry))
+    ents.append(NotifyRemoveSelect(entry))
     ents.append(StrainSelect(entry))
     async_add_entities(ents)
 
@@ -199,22 +200,21 @@ class StrainSelect(ControlosBaseEntity, SelectEntity):
 
 
 class NotifyTargetSelect(RestoreEntity, SelectEntity):
-    """Ziel fuer Benachrichtigungen: alle Geraete oder ein bestimmtes Handy.
-
-    Optionen werden dynamisch aus den notify-Diensten der Companion-Apps
-    befuellt (mobile_app_*), aktualisiert vom Coordinator-Tick."""
+    """Geraete-Picker fuer die Benachrichtigungs-Auswahl (ein mobile_app-Gerat,
+    das per Button zur Ziel-Liste hinzugefuegt wird). Optionen dynamisch aus den
+    notify-Diensten der Companion-Apps."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_icon = "mdi:cellphone-message"
-    _attr_name = "Benachrichtigungs-Ziel"
+    _attr_name = "Zielgerät wählen"
 
     def __init__(self, entry: ConfigEntry):
         self._entry = entry
-        self._attr_unique_id = "%s_benachrichtigung_ziel" % entry.entry_id
-        self._attr_options = ["Alle Geräte"]
-        self._attr_current_option = "Alle Geräte"
-        self.entity_id = ("select.controlos_%s_benachrichtigung_ziel"
+        self._attr_unique_id = "%s_benachrichtigung_geraet" % entry.entry_id
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+        self.entity_id = ("select.controlos_%s_benachrichtigung_geraet"
                           % area_slug(entry.title))
 
     @property
@@ -223,33 +223,82 @@ class NotifyTargetSelect(RestoreEntity, SelectEntity):
 
     def _compute(self) -> list[str]:
         dienste = self.hass.services.async_services().get("notify", {})
-        return ["Alle Geräte"] + sorted(
-            k for k in dienste if k.startswith("mobile_app_"))
+        apps = sorted(k for k in dienste if k.startswith("mobile_app_"))
+        return apps or ["—"]
 
     def refresh_options(self) -> None:
         neu = self._compute()
         if neu != self._attr_options:
             self._attr_options = neu
             if self._attr_current_option not in neu:
-                self._attr_current_option = "Alle Geräte"
+                self._attr_current_option = neu[0]
             self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._attr_options = self._compute()
         last = await self.async_get_last_state()
-        if last is not None and last.state:
-            self._attr_current_option = (
-                last.state if last.state in self._attr_options
-                else "Alle Geräte")
-        data = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-            self._entry.entry_id, {})
-        data.setdefault("entities", {})["benachrichtigung_ziel"] = self
+        if last is not None and last.state in self._attr_options:
+            self._attr_current_option = last.state
+        else:
+            self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, "benachrichtigung_geraet", self)
 
     async def async_select_option(self, option: str) -> None:
         if option in self._attr_options:
             self._attr_current_option = option
             self.async_write_ha_state()
+
+    def selected_service(self) -> str | None:
+        cur = self._attr_current_option
+        return cur if cur and cur != "—" else None
+
+
+class NotifyRemoveSelect(ControlosBaseEntity, SelectEntity):
+    """Auswahl eines Zielgeraets aus der Benachrichtigungs-Liste (zum Entfernen).
+    Optionen dynamisch aus dem Store (Coordinator ruft refresh_options)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "benachrichtigung_entfernen",
+                         {"name": "Zielgerät (zum Entfernen)",
+                          "icon": "mdi:cellphone-remove"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        ziele = store.notify_targets(self._entry.entry_id) if store else []
+        opts = ["%d. %s" % (i + 1, d.replace("mobile_app_", ""))
+                for i, d in enumerate(ziele)]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_index(self) -> int:
+        try:
+            return self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return -1
 
 
 DESIGN_SELECTS = {
