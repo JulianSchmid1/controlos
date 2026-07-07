@@ -13,7 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, PHASES, SELECT_DEVICE_PARAMS, SELECT_PARAMS
+from .const import (DOMAIN, PHASES, SELECT_DEVICE_PARAMS, SELECT_PARAMS,
+                    ZELT_PHASES)
 from .entity_base import (ControlosBaseEntity, area_slug, device_info_for,
                           store_entity)
 
@@ -51,6 +52,37 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
             self._attr_current_option = last.state
         store_entity(self.hass, self._entry, self._key, self)
 
+    def _coord(self):
+        return (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("coordinator"))
+
+    def refresh_options(self) -> None:
+        # Wuchsphase + Phasen-Editor: Optionen je Zelt-Typ beschraenken
+        # (Growzelt = alle, Mutterzelt = Vegetation, Stecklingszelt = Klon).
+        if self._key not in ("wuchsphase", "phase_editor"):
+            return
+        ents = (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+        zt = getattr(ents.get("zelt_typ"), "current_option", None)
+        allowed = list(ZELT_PHASES.get(zt, PHASES))
+        snap = self._attr_current_option not in allowed
+        if allowed == self._attr_options and not snap:
+            return
+        self._attr_options = allowed
+        if snap and allowed:
+            self._attr_current_option = allowed[0]
+            self.async_write_ha_state()
+            coord = self._coord()
+            if coord:
+                if self._key == "wuchsphase":
+                    self.hass.async_create_task(
+                        coord.async_on_phase_change(allowed[0]))
+                else:
+                    self.hass.async_create_task(
+                        coord.async_on_phase_editor_change(allowed[0]))
+        else:
+            self.async_write_ha_state()
+
     async def async_select_option(self, option: str) -> None:
         if option not in self._attr_options:
             return
@@ -59,8 +91,7 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
         self.async_write_ha_state()
         if not changed:
             return
-        coord = (self.hass.data.get(DOMAIN, {})
-                 .get(self._entry.entry_id, {}).get("coordinator"))
+        coord = self._coord()
         if not coord:
             return
         # Wuchsphase gewechselt -> Phasenprofil laden (Override sonst Standard)
@@ -69,6 +100,9 @@ class ControlosSelect(ControlosBaseEntity, SelectEntity):
         # Phasen-Editor gewechselt -> Profil in die pe_-Regler laden (nur Anzeige)
         elif self._key == "phase_editor":
             self.hass.async_create_task(coord.async_on_phase_editor_change(option))
+        # Zelt-Typ gewechselt -> Tick anstossen (beschraenkt die Phasen-Optionen)
+        elif self._key == "zelt_typ":
+            self.hass.async_create_task(coord.async_request_refresh())
 
 
 class ControlosDeviceSelect(ControlosBaseEntity, SelectEntity):

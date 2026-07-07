@@ -777,13 +777,15 @@ class ControlosCoordinator(DataUpdateCoordinator):
         ents = self._ents()
         if store is None:
             return
+        ctx = _Ctx(self.hass, ents)
         name_e = ents.get("strain_name")
-        wochen_e = ents.get("strain_bluetezeit")
+        wert_e = ents.get("strain_bluetezeit")
         name = (getattr(name_e, "native_value", "") or "").strip()
-        wochen = int(getattr(wochen_e, "native_value", 9) or 9)
+        wert = int(getattr(wert_e, "native_value", 9) or 9)
+        einheit = ctx.sel_raw("bluetezeit_einheit") or "Wochen"
         if not name:
             return
-        store.add_strain(self.entry.entry_id, name, wochen)
+        store.add_strain(self.entry.entry_id, name, wert, einheit)
         if name_e is not None:
             await name_e.async_set_value("")
         await self.async_request_refresh()

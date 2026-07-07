@@ -596,17 +596,27 @@ function kalenderView(a) {
   const G = "sensor.controlos_" + s + "_";
   const sp = "select.controlos_" + s + "_";
   const bp = "button.controlos_" + s + "_";
-  // Strain-Liste inkl. berechnetem Erntedatum (Photo: Blüte-Start, Auto: Grow-Start)
+  // Strain-Liste: Growzelt zeigt Erntedatum (Photo: Blüte-Start, Auto:
+  // Grow-Start + Blütezeit), Mutter-/Stecklingszelt zeigen das Alter in Tagen.
   const strainList =
     "{% set st = state_attr('" + G + "grow_tag','strains') or [] %}\n" +
+    "{% set zt = states('" + sp + "zelt_typ') %}\n" +
     "{% set typ = states('" + sp + "grow_typ') %}\n" +
     "{% set ref = states('date.controlos_" + s + "_grow_start') if typ == 'Autoflowering' " +
     "else states('date.controlos_" + s + "_bluete_start') %}\n" +
     "{% if st %}{% for e in st %}" +
-    "- **{{ e.name }}** — Blütezeit {{ e.wochen }} Wochen" +
+    "{% set wert = e.get('wert', e.get('wochen', 0)) | int %}" +
+    "{% set einh = e.get('einheit', 'Wochen') %}" +
+    "{% set tage = wert * 7 if einh == 'Wochen' else wert %}" +
+    "{% if zt == 'Growzelt' or zt in ['unknown','unavailable'] %}" +
+    "- **{{ e.name }}** — Blütezeit {{ wert }} {{ einh }}" +
     "{% if ref not in ['unknown','unavailable','',None] %} → 🌾 Ernte ~ " +
-    "{{ (as_datetime(ref) + timedelta(weeks=e.wochen|int)).strftime('%d.%m.%Y') }}{% endif %}\n" +
-    "{% endfor %}{% else %}_Noch keine Strains eingetragen._{% endif %}";
+    "{{ (as_datetime(ref) + timedelta(days=tage)).strftime('%d.%m.%Y') }}{% endif %}\n" +
+    "{% else %}" +
+    "- **{{ e.name }}** — 🌱 {% if e.added %}{{ (now().date() - as_datetime(e.added).date()).days + 1 }} Tage alt (seit {{ e.added }})" +
+    "{% else %}Alter unbekannt{% endif %}\n" +
+    "{% endif %}" +
+    "{% endfor %}{% else %}_Noch keine Einträge._{% endif %}";
   const archiv =
     "{% set arch = state_attr('" + G + "grow_tag','grow_archiv') or [] %}\n" +
     "{% if arch %}{% for g in arch %}" +
@@ -630,26 +640,37 @@ function kalenderView(a) {
           entities: ["calendar.controlos_" + s + "_kalender"],
           grid_options: { columns: "full", rows: 6 } },
       ] },
-      { type: "grid", cards: [
-        sep("Grow-Verwaltung", "mdi:sprout"),
-        { type: "entities", entities: [
-          { entity: "text.controlos_" + s + "_grow_name", name: "Grow-Name" },
-          { entity: sp + "grow_typ", name: "Grow-Typ" },
-          { entity: "date.controlos_" + s + "_grow_start", name: "Grow-Start" },
-          { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Start" }] },
-        bbtn(bp + "grow_neu", "Neuen Grow starten", "mdi:sprout"),
-        sep("Strains", "mdi:cannabis"),
-        { type: "entities", entities: [
-          { entity: "text.controlos_" + s + "_strain_name", name: "Sorte" },
-          { entity: "number.controlos_" + s + "_strain_bluetezeit", name: "Blütezeit (Wochen)" }] },
-        bbtn(bp + "strain_add", "Strain hinzufügen", "mdi:plus-circle"),
-        { type: "markdown", content: strainList },
-        { type: "entities", entities: [
-          { entity: sp + "strain_auswahl", name: "Strain wählen" }] },
-        bbtn(bp + "strain_remove", "Gewählten Strain entfernen", "mdi:minus-circle"),
-        sep("Archiv (abgeschlossene Grows)", "mdi:archive"),
-        { type: "markdown", content: archiv },
-      ] },
+      (() => {
+        // Nur im Growzelt gibt es Grow-Typ/Blüte-Start/Blütezeit/Ernte.
+        const growOnly = { visibility: [{ condition: "state",
+          entity: sp + "zelt_typ", state: "Growzelt" }] };
+        return { type: "grid", cards: [
+          sep("Grow-Verwaltung", "mdi:sprout"),
+          { type: "entities", entities: [
+            { entity: "text.controlos_" + s + "_grow_name", name: "Grow-Name" },
+            { entity: sp + "zelt_typ", name: "Zelt-Typ" },
+            { entity: "date.controlos_" + s + "_grow_start", name: "Start" }] },
+          Object.assign({ type: "entities", entities: [
+            { entity: sp + "grow_typ", name: "Grow-Typ" },
+            { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Start" }] },
+            growOnly),
+          bbtn(bp + "grow_neu", "Neuen Grow / Batch starten", "mdi:sprout"),
+          sep("Strains / Pflanzen", "mdi:cannabis"),
+          { type: "entities", entities: [
+            { entity: "text.controlos_" + s + "_strain_name", name: "Sorte / Name" }] },
+          Object.assign({ type: "entities", entities: [
+            { entity: sp + "bluetezeit_einheit", name: "Blütezeit-Einheit" },
+            { entity: "number.controlos_" + s + "_strain_bluetezeit", name: "Blütezeit" }] },
+            growOnly),
+          bbtn(bp + "strain_add", "Hinzufügen", "mdi:plus-circle"),
+          { type: "markdown", content: strainList },
+          { type: "entities", entities: [
+            { entity: sp + "strain_auswahl", name: "Auswählen" }] },
+          bbtn(bp + "strain_remove", "Gewählten entfernen", "mdi:minus-circle"),
+          sep("Archiv (abgeschlossen)", "mdi:archive"),
+          { type: "markdown", content: archiv },
+        ] };
+      })(),
       { type: "grid", cards: [
         sep("Phasen-Tagebuch", "mdi:book-open-variant"),
         { type: "entities", entities: [
@@ -689,6 +710,7 @@ function configView(a) {
         sep("Bereich", "mdi:sprout"),
         bsw(wp + "aktiv", a.title + " Aktiv", "mdi:power"),
         bsel(sp + "betriebsmodus", "Betriebsmodus (Monitor/Steuern)"),
+        bsel(sp + "zelt_typ", "Zelt-Typ (Grow / Mutter / Steckling)"),
         sep("Wuchsphase & Grow", "mdi:sprout-outline"),
         bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
         bsel(sp + "wuchsphase", "Aktuelle Phase (Steuerung)"),

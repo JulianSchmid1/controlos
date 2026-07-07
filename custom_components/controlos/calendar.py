@@ -26,6 +26,18 @@ async def async_setup_entry(
     async_add_entities([ControlosCalendar(entry)])
 
 
+def _strain_tage(st: dict) -> int | None:
+    """Bluetezeit eines Strains in Tagen (unterstuetzt Wochen/Tage +
+    Altformat mit 'wochen')."""
+    try:
+        if "wert" in st:
+            wert = int(st.get("wert") or 0)
+            return wert * 7 if st.get("einheit") == "Wochen" else wert
+        return int(st.get("wochen") or 0) * 7
+    except (TypeError, ValueError):
+        return None
+
+
 def _as_date(val) -> date | None:
     if isinstance(val, datetime):
         return val.date()
@@ -75,23 +87,23 @@ class ControlosCalendar(CalendarEntity):
                                          summary=label))
 
         if store:
-            # Ernte-Termine je Strain des aktiven Grows.
-            # Referenz: Photoperiodisch = Bluete-Start (12/12), Autoflowering =
-            # Grow-Start (Tag 1). Erntedatum = Referenz + Bluetezeit-Wochen.
-            typ_e = self._ents().get("grow_typ")
-            typ = getattr(typ_e, "current_option", None) or "Photoperiodisch"
-            ref_key = "grow_start" if typ == "Autoflowering" else "bluete_start"
-            ref = _as_date(getattr(self._ents().get(ref_key), "native_value", None))
-            if ref is not None:
-                for st in store.strains(self._entry.entry_id):
-                    try:
-                        wochen = int(st.get("wochen") or 0)
-                    except (TypeError, ValueError):
-                        continue
-                    ernte = ref + timedelta(weeks=wochen)
-                    evs.append(CalendarEvent(
-                        start=ernte, end=ernte + timedelta(days=1),
-                        summary="🌾 Ernte: %s" % (st.get("name") or "?")))
+            # Ernte-Termine je Strain - nur im Growzelt (Mutter-/Stecklingszelt
+            # haben keine Ernte, sondern zeigen das Alter der Pflanzen).
+            zelt = getattr(self._ents().get("zelt_typ"), "current_option", None)
+            if zelt in (None, "Growzelt"):
+                typ = getattr(self._ents().get("grow_typ"),
+                              "current_option", None) or "Photoperiodisch"
+                ref_key = "grow_start" if typ == "Autoflowering" else "bluete_start"
+                ref = _as_date(getattr(self._ents().get(ref_key), "native_value", None))
+                if ref is not None:
+                    for st in store.strains(self._entry.entry_id):
+                        tage = _strain_tage(st)
+                        if tage is None:
+                            continue
+                        ernte = ref + timedelta(days=tage)
+                        evs.append(CalendarEvent(
+                            start=ernte, end=ernte + timedelta(days=1),
+                            summary="🌾 Ernte: %s" % (st.get("name") or "?")))
 
             # Phasen-Zeitraeume aus dem Tagebuch
             g = store.grow(self._entry.entry_id)

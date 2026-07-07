@@ -5,6 +5,8 @@ Grow-Tracking (Phasen-Start + Historie) je Bereich.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
@@ -72,10 +74,12 @@ class ControlosStore:
     def strains(self, entry_id: str) -> list:
         return list(self.grow(entry_id).get("strains") or [])
 
-    def add_strain(self, entry_id: str, name: str, wochen: int) -> None:
+    def add_strain(self, entry_id: str, name: str, wert: int,
+                   einheit: str = "Wochen") -> None:
         g = self.grow(entry_id)
         g.setdefault("strains", []).append(
-            {"name": str(name or "?").strip(), "wochen": int(wochen)})
+            {"name": str(name or "?").strip(), "wert": int(wert),
+             "einheit": einheit, "added": date.today().isoformat()})
         self._save()
 
     def remove_strain(self, entry_id: str, index: int) -> None:

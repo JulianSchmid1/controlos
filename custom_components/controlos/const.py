@@ -36,6 +36,15 @@ MQTT_RESTART_COOLDOWN_S = 900  # 15 min Ruhe nach einem Restart
 # ---------------------------------------------------------------------------
 PHASES = ["Keimling / Klon", "Vegetation", "Vorblüte", "Hauptblüte",
           "Spätblüte", "Trocknen"]
+# Zelt-Typ bestimmt die verfuegbaren Phasen (Wuchsphase + Phasen-Editor):
+#   Growzelt = voller Zyklus | Mutterzelt = nur Vegetation |
+#   Stecklingszelt = nur Keimling/Klon (Stecklingsphase)
+ZELT_TYPEN = ["Growzelt", "Mutterzelt", "Stecklingszelt"]
+ZELT_PHASES = {
+    "Growzelt": PHASES,
+    "Mutterzelt": ["Vegetation"],
+    "Stecklingszelt": ["Keimling / Klon"],
+}
 PHASE_KEYS = ["ziel_temp_tag", "ziel_temp_nacht", "temp_toleranz",
               "ziel_feuchte_tag", "ziel_feuchte_nacht", "feuchte_toleranz",
               "vpd_ziel", "vpd_toleranz", "co2_ziel", "co2_toleranz"]
@@ -127,7 +136,7 @@ NUMBER_PARAMS = {
     "abluft_backup_vpd":  {"name": "Abluft-Backup VPD",   "min": 1.0, "max": 3.0, "step": 0.05, "unit": "kPa", "icon": "mdi:water-alert", "default": 2.0},
     "abluft_backup_disarm_min": {"name": "Abluft-Backup Entschärf-Zeit", "min": 0, "max": 60, "step": 1, "unit": "min", "icon": "mdi:timer-off-outline", "default": 10},
     # -- Grow-Verwaltung --
-    "strain_bluetezeit": {"name": "Strain Blütezeit", "min": 1, "max": 20, "step": 1, "unit": "Wochen", "icon": "mdi:flower-outline", "default": 9},
+    "strain_bluetezeit": {"name": "Blütezeit", "min": 1, "max": 300, "step": 1, "icon": "mdi:flower-outline", "default": 9},
 }
 
 # Phasen-Editor: Kopien der Phasen-Klimawerte (nur zum Bearbeiten der Profile,
@@ -180,6 +189,8 @@ SELECT_PARAMS = {
     "wuchsphase":      {"name": "Wuchsphase", "icon": "mdi:sprout", "options": ["Keimling / Klon", "Vegetation", "Vorblüte", "Hauptblüte", "Spätblüte", "Trocknen"], "default": "Vegetation"},
     "phase_editor":    {"name": "Phase bearbeiten", "icon": "mdi:pencil-ruler", "options": PHASES, "default": "Vegetation"},
     "grow_typ":        {"name": "Grow-Typ", "icon": "mdi:dna", "options": ["Photoperiodisch", "Autoflowering"], "default": "Photoperiodisch"},
+    "zelt_typ":        {"name": "Zelt-Typ", "icon": "mdi:home-group", "options": ZELT_TYPEN, "default": "Growzelt"},
+    "bluetezeit_einheit": {"name": "Blütezeit-Einheit", "icon": "mdi:calendar-clock", "options": ["Wochen", "Tage"], "default": "Wochen"},
     "speicherzeit":    {"name": "Speicherzeit Messdaten", "icon": "mdi:database-clock", "options": ["Unbegrenzt", "12 Monate", "6 Monate", "3 Monate"], "default": "Unbegrenzt"},
     "graph_zeitraum":  {"name": "Graph-Zeitraum", "icon": "mdi:chart-timeline", "options": ["1 h", "6 h", "12 h", "24 h", "48 h", "7 Tage"], "default": "24 h"},
     "co2_betrieb_modus": {"name": "CO2 Betriebsmodus", "icon": "mdi:molecule-co2", "options": ["Dauerbetrieb", "Intervall"], "default": "Dauerbetrieb"},
