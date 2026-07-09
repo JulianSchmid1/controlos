@@ -16,6 +16,7 @@ from datetime import time as dt_time
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
@@ -118,6 +119,33 @@ class ControlosCoordinator(DataUpdateCoordinator):
 
     def _store(self):
         return self.hass.data.get(DOMAIN, {}).get("store")
+
+    # Entities, die der Coordinator SELBST je Tick schreibt -> nicht als
+    # Ausloeser beobachten (sonst Rueckkopplung, v.a. der zerfallende Bias).
+    _SELF_WRITTEN = frozenset((
+        "vpd_bias_tag", "vpd_bias_nacht", "temp_bias_tag", "temp_bias_nacht",
+        "hum_bias_tag", "hum_bias_nacht", "licht_ende", "bluete_start"))
+    # Nur echte Eingabe-Entities beobachten (keine Sensor-Ausgaben, die sich
+    # jeden Tick aendern und sonst eine Endlosschleife ausloesen wuerden).
+    _INPUT_DOMAINS = ("select", "switch", "number", "time", "date", "text")
+
+    def setup_change_listener(self):
+        """Sofort neu regeln, sobald der Nutzer eine Einstellung aendert,
+        statt bis zu einen 30s-Tick zu warten (async_request_refresh ist
+        entprellt, mehrere Aenderungen werden zusammengefasst)."""
+        ids = []
+        for key, ent in self._ents().items():
+            eid = getattr(ent, "entity_id", None)
+            if (eid and key not in self._SELF_WRITTEN
+                    and eid.split(".", 1)[0] in self._INPUT_DOMAINS):
+                ids.append(eid)
+        if not ids:
+            return None
+
+        async def _changed(_event):
+            await self.async_request_refresh()
+
+        return async_track_state_change_event(self.hass, ids, _changed)
 
     def _source(self, ctx, sel_key):
         return ctx.fnum(ctx.sel(sel_key))

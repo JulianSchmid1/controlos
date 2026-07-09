@@ -807,8 +807,10 @@ function klimaView(a) {
         V(bsel(sp + "klima_fan_nacht", "AC-Lüfter Nacht"), cOn(wp + "vorhanden_klima")),
         V(bslider(np + "klima_hybrid_gewicht", "Hybrid-Gewicht (Area↔AC-Sensor)"),
           cOn(wp + "vorhanden_klima"), cEq(sp + "klima_steuermodus", "Hybrid")),
+        // Nicht im Autonom-Modus: dort schaltet die AC ihren Kompressor selbst.
         V(bslider(np + "klima_min_laufzeit", "Mindestlaufzeit (Kompressorschutz)"),
-          cOn(wp + "vorhanden_klima")),
+          cOn(wp + "vorhanden_klima"),
+          { condition: "state", entity: sp + "klima_steuermodus", state_not: "Autonom" }),
         Object.assign(sep("CO2-Steuerung", "mdi:molecule-co2"), co2vis),
         Object.assign(bsw(wp + "co2_automatik", "CO2 Automatik", "mdi:robot-outline"), co2vis),
         Object.assign(bsel(sp + "co2_betrieb_modus", "Betriebsart (Dauer/Intervall)"), co2vis),

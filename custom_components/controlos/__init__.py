@@ -74,6 +74,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "entities": {}, "coordinator": coordinator}
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await coordinator.async_refresh()
+    # Einstellungsaenderungen sofort uebernehmen (statt bis zu einen Tick warten)
+    unsub = coordinator.setup_change_listener()
+    if unsub:
+        entry.async_on_unload(unsub)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _LOGGER.info("ControlOS-Bereich eingerichtet: %s", entry.title)
     return True
