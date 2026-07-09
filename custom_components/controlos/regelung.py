@@ -23,8 +23,9 @@ class Regler:
         self._last_sw: dict = {}
 
     # ------------------------------------------------------------------
-    def latch(self, key, on_cond, off_cond, force_off=False):
+    def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
         now = time.time()
+        ms = MIN_SWITCH_S if min_s is None else min_s
         prev = self._latch.get(key, False)
         if force_off:
             new = False
@@ -37,7 +38,8 @@ class Regler:
         else:
             new = prev
         if new != prev:
-            if (now - self._last_sw.get(key, 0)) < MIN_SWITCH_S and not force_off:
+            # Mindestlaufzeit je Geraet: erst nach Ablauf schalten, dann sofort.
+            if (now - self._last_sw.get(key, 0)) < ms and not force_off:
                 return prev
             self._latch[key] = new
             self._last_sw[key] = now
@@ -87,16 +89,23 @@ class Regler:
             self._last_sw.pop(k, None)
 
     def pair_hyst(self, ka, kb, val, lo, hi, target, nz,
-                  a_present, b_present, a_dual, b_dual, force_off=False):
+                  a_present, b_present, a_dual, b_dual, force_off=False,
+                  a_min=None, b_min=None):
+        # Einzelgeraet: am ZIEL abschalten (saubere Hysterese, kein Uebertrocknen
+        # bis zur gegenueberliegenden Bandkante). Sind BEIDE Geraete vorhanden,
+        # bleibt ein Deadband target±nz, damit sie sich nicht gegenseitig jagen.
+        # a_min/b_min = geraetespezifische Mindestlaufzeit (Sekunden).
         both = a_present and b_present
         if a_present:
-            a_off = (target + nz) if both else (target if a_dual else lo)
-            a_on = self.latch(ka, val >= hi, val <= a_off, force_off=force_off)
+            a_off = (target + nz) if both else target
+            a_on = self.latch(ka, val >= hi, val <= a_off,
+                              force_off=force_off, min_s=a_min)
         else:
             a_on = self.latch(ka, False, True)
         if b_present:
-            b_off = (target - nz) if both else (target if b_dual else hi)
-            b_on = self.latch(kb, val <= lo, val >= b_off, force_off=force_off)
+            b_off = (target - nz) if both else target
+            b_on = self.latch(kb, val <= lo, val >= b_off,
+                              force_off=force_off, min_s=b_min)
         else:
             b_on = self.latch(kb, False, True)
         return a_on, b_on
@@ -257,6 +266,10 @@ class Regler:
         temp_tol = ctx.num("temp_toleranz", 0.5)
         f_tol = ctx.num("feuchte_toleranz", 5.0)
         pmin = ctx.num("dimm_mindestleistung", 30.0)
+        # Geraetespezifische Mindestlaufzeiten (Minuten -> Sekunden); nach Ablauf
+        # wird sofort geschaltet. Fallback = globaler MIN_SWITCH_S.
+        entf_min_s = ctx.num("entfeuchter_min_laufzeit", MIN_SWITCH_S / 60.0) * 60.0
+        klima_min_s = ctx.num("klima_min_laufzeit", MIN_SWITCH_S / 60.0) * 60.0
 
         d_bef = dev("befeuchter", "befeuchter")
         d_ent = dev("entfeuchter", "entfeuchter")
@@ -430,7 +443,8 @@ class Regler:
             nz = max(0.02, vpd_tol / 8.0)
             lo_perf = (vpd_min + vpd_ziel) / 2.0
             hi_perf = (vpd_ziel + vpd_max) / 2.0
-            ent_on = (self.latch("ent", vpd <= lo_perf, vpd >= lo_perf + nz)
+            ent_on = (self.latch("ent", vpd <= lo_perf, vpd >= lo_perf + nz,
+                                 min_s=entf_min_s)
                       if ent_da else self.latch("ent", False, True))
             bef_on = (self.latch("bef", vpd >= hi_perf, vpd <= hi_perf - nz)
                       if bef_da else self.latch("bef", False, True))
@@ -447,7 +461,8 @@ class Regler:
         elif hum is not None:
             ent_on, bef_on = self.pair_hyst(
                 "ent", "bef", hum, ziel_hum - f_tol, ziel_hum + f_tol,
-                ziel_hum, 1.0, ent_da, bef_da, ent_dual, bef_dual)
+                ziel_hum, 1.0, ent_da, bef_da, ent_dual, bef_dual,
+                a_min=entf_min_s)
             bef_dim = (hum, ziel_hum, ziel_hum - f_tol)
             ent_dim = (hum, ziel_hum, ziel_hum + f_tol)
             hum_info = "Feuchte %.1f (Ziel %.0f +-%.0f)" % (hum, ziel_hum, f_tol)
@@ -474,7 +489,8 @@ class Regler:
             else:
                 h_ent, e_ziel = hum, ziel_hum
             if h_ent is not None:
-                ent_on = self.latch("ent_sm", h_ent >= e_ziel + f_tol, h_ent <= e_ziel)
+                ent_on = self.latch("ent_sm", h_ent >= e_ziel + f_tol,
+                                    h_ent <= e_ziel, min_s=entf_min_s)
                 ent_dim = (h_ent, e_ziel, e_ziel + f_tol)
                 ent_stage_frac = None  # Stufe wieder aus dim ableiten
                 hum_info += " | Entf[%s] %.1f->Z%.1f" % (entf_sm[:4], h_ent, e_ziel)
@@ -559,7 +575,7 @@ class Regler:
                 fan_ok = klima_fan_eff in (ctx.attr(d_klima, "fan_modes", []) or [])
                 sent = []
                 if klima_mode != cur_mode:
-                    if self._can("rt_klima_mode"):
+                    if self._can("rt_klima_mode", klima_min_s):
                         klima_cmds.append(("climate", "set_hvac_mode",
                                            {"entity_id": d_klima, "hvac_mode": klima_mode}))
                         self._mark("rt_klima_mode")
