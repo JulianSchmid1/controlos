@@ -10,6 +10,7 @@ der Coordinator entscheidet je Betriebsmodus, ob geschaltet wird.
 """
 from __future__ import annotations
 
+import math
 import time
 from datetime import datetime
 
@@ -140,7 +141,8 @@ class Regler:
 
     # ------------------------------------------------------------------
     def ki_bias(self, ctx, eff_modus, ist_tag, sys_modus, tank_voll,
-                vpd, vpd_ziel, bias_out, bef_da=False, ent_da=False):
+                vpd, vpd_ziel, bias_out, bef_da=False, ent_da=False,
+                temp_lever=False):
         """Adaptiver Bias - AUSSCHLIESSLICH fuer die VPD-Tagsteuerung.
 
         Nachts (statische Regelung) und im Feuchte-Modus wird weder gelernt
@@ -178,8 +180,9 @@ class Regler:
         if tank_voll or vpd is None:
             return vb   # Rechnen gestoppt, eingefrorener Wert gilt weiter
         e = vpd_ziel - vpd
-        if (e > 0 and not ent_da) or (e < 0 and not bef_da):
-            # Aktor fehlt strukturell -> Windup abbauen statt integrieren
+        if not temp_lever and ((e > 0 and not ent_da) or (e < 0 and not bef_da)):
+            # Aktor fehlt strukturell (kein Be-/Entfeuchter fuer diese Richtung)
+            # und keine VPD->Temp-Kopplung -> Windup abbauen statt integrieren.
             vb = dec(vb, 0.01, 3)
             bput("vpd", "tag", vb)
             return vb
@@ -415,6 +418,18 @@ class Regler:
         bef_dual = ctx.sw("dual_befeuchter")
         ent_dual = ctx.sw("dual_entfeuchter")
 
+        # VPD->Temperatur-Kopplung (wie Altsystem): geschlossenes System,
+        # VPD-Modus, Prio "feuchte", AC verfuegbar -> die AC-Zieltemperatur
+        # wird dynamisch aus dem VPD-Ziel abgeleitet. Damit ist die Temperatur
+        # ein VPD-Stellglied, und der Bias darf in BEIDE Richtungen lernen.
+        # NUR TAGSUEBER: die dynamische Zieltemperatur wird luftfeuchte-basiert
+        # gerechnet; nachts (kaltes Blatt) weicht die blattbasierte VPD-Messung
+        # zu stark ab -> sie wuerde gegen den Entfeuchter arbeiten.
+        vpd_temp_kopplung = (sys_modus == "Geschlossenes System"
+                             and eff_modus == "VPD" and ist_tag
+                             and (ctx.sel_raw("prio") or "temperatur") == "feuchte"
+                             and klima_da)
+
         # Entfeuchter-Tank
         tank_eid = ctx.sel("sensor_tank")
         tank_voll = bool(tank_eid and ctx.state(tank_eid) == "on")
@@ -426,7 +441,8 @@ class Regler:
                     or "entfeuchter" in ausgefallen)
         vb = self.ki_bias(ctx, eff_modus, ist_tag, sys_modus, ki_stopp,
                           vpd, vpd_ziel, bias_out,
-                          bef_da=bef_da, ent_da=ent_da)
+                          bef_da=bef_da, ent_da=ent_da,
+                          temp_lever=vpd_temp_kopplung)
         vpd_min += vb
         vpd_max += vb
         vpd_ziel += vb
@@ -527,12 +543,23 @@ class Regler:
         else:
             ctrl_temp = temp
 
+        # VPD->Temp-Kopplung: AC-Zieltemperatur = die Temperatur, die bei
+        # aktueller Luftfeuchte den VPD-Zielwert ergibt (Magnus umgekehrt,
+        # vpd_ziel enthaelt bereits den Bias). Sonst normales Temperatur-Ziel.
+        klima_ziel_eff = ziel_temp
+        if vpd_temp_kopplung and hum is not None and vpd_ziel is not None:
+            svp_need = vpd_ziel / max(0.01, 1.0 - hum / 100.0)
+            if 0.05 < svp_need < 8.0:
+                lv = math.log(svp_need / 0.6108)
+                klima_ziel_eff = max(16.0, min(
+                    30.0, round(237.3 * lv / (17.27 - lv), 1)))
+
         klima_dry_need = False
         if hum is not None and not ent_da and "dry" in klima_modes:
             klima_dry_need = self.latch("kdry", hum >= ziel_hum + f_tol, hum <= ziel_hum)
         if ctrl_temp is not None:
-            kcool = self.latch("kcool", ctrl_temp >= ziel_temp + temp_tol, ctrl_temp <= ziel_temp)
-            kheat = self.latch("kheat", ctrl_temp <= ziel_temp - temp_tol, ctrl_temp >= ziel_temp)
+            kcool = self.latch("kcool", ctrl_temp >= klima_ziel_eff + temp_tol, ctrl_temp <= klima_ziel_eff)
+            kheat = self.latch("kheat", ctrl_temp <= klima_ziel_eff - temp_tol, ctrl_temp >= klima_ziel_eff)
         else:
             kcool = self.latch("kcool", False, True)
             kheat = self.latch("kheat", False, True)
@@ -551,10 +578,14 @@ class Regler:
 
         if klima_sm == "Autonom":
             klima_mode = spiegel
-            klima_target = ctx.num("klima_ziel_tag" if ist_tag else "klima_ziel_nacht", ziel_temp)
+            # Bei VPD->Temp-Kopplung gilt auch im Autonom-Modus das dynamische
+            # Ziel (sonst das manuelle AC-Ziel Tag/Nacht).
+            klima_target = (round(klima_ziel_eff, 1) if vpd_temp_kopplung
+                            else ctx.num("klima_ziel_tag" if ist_tag
+                                         else "klima_ziel_nacht", ziel_temp))
         else:
             klima_mode = aktiv_mode
-            klima_target = round(ziel_temp, 1)
+            klima_target = round(klima_ziel_eff, 1)
         if not d_klima:
             klima_mode = "off"
         kuehl_on = klima_mode == "cool"
