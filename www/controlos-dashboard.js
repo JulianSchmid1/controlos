@@ -965,6 +965,19 @@ function systemView(a) {
   // VPD-Alarm/-Puffer nur bei ableitbarem VPD (Temp+Feuchte) und VPD-Modus
   const vpdOk = [sNot("sensor_temp_luft"), sNot("sensor_feuchte_luft"),
     cEq(sp + "klima_modus", "VPD")];
+  // Alarm-Schwellen je Parameter: Alarmart-Select + entweder Toleranz-Puffer
+  // (Modus „Toleranz") oder feste Min/Max-Slider (Modus „Min/Max").
+  // `base` = Basissichtbarkeit (Sensor/VPD vorhanden), gilt fuer alle Karten.
+  const alarmParam = (key, label, base) => {
+    const tol = cEq(sp + key + "_alarm_modus", "Toleranz");
+    const mm = cEq(sp + key + "_alarm_modus", "Min/Max");
+    return [
+      V(bsel(sp + key + "_alarm_modus", label + "-Alarmart (Toleranz / Min-Max)"), ...base),
+      V(bslider(np + key + "_alarm_margin", label + "-Alarm-Puffer (über Toleranz)"), ...base, tol),
+      V(bslider(np + key + "_alarm_min", label + "-Alarm min"), ...base, mm),
+      V(bslider(np + key + "_alarm_max", label + "-Alarm max"), ...base, mm),
+    ];
+  };
   const zielListe =
     "{% set t = state_attr('" + G + "grow_tag','notify_targets') or [] %}\n" +
     "{% if t %}{% for d in t %}- 📱 {{ d.replace('mobile_app_','') }}\n" +
@@ -1004,9 +1017,9 @@ function systemView(a) {
       { type: "grid", cards: [
         sep("Alarm-Schwellen", "mdi:alert-outline"),
         V(bslider(np + "co2_alarm_max", "CO2-Alarm ab"), cOn(wp + "vorhanden_co2")),
-        V(bslider(np + "temp_alarm_margin", "Temp-Alarm-Puffer (über Toleranz)"), sNot("sensor_temp_luft")),
-        V(bslider(np + "feuchte_alarm_margin", "Feuchte-Alarm-Puffer"), sNot("sensor_feuchte_luft")),
-        V(bslider(np + "vpd_alarm_margin", "VPD-Alarm-Puffer"), ...vpdOk),
+        ...alarmParam("temp", "Temperatur", [sNot("sensor_temp_luft")]),
+        ...alarmParam("feuchte", "Feuchte", [sNot("sensor_feuchte_luft")]),
+        ...alarmParam("vpd", "VPD", vpdOk),
       ] },
     ] };
 }

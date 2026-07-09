@@ -500,30 +500,46 @@ class ControlosCoordinator(DataUpdateCoordinator):
                         "MQTT-Watchdog kümmert sich, bitte prüfen." % name)
         self._alert_on["sensor"] = ausfall
 
-        # -- Klima-Alarme (eigene Schwellen: Ziel +- (Toleranz + Margin)), 24/7 --
-        async def klima_alarm(akey, wert, ziel, band, toggle, icon,
-                              label, einheit):
-            aus = (wert is not None and ziel is not None and band > 0
-                   and abs(wert - ziel) > band)
-            if (aus and not self._alert_on.get(akey) and ctx.sw(toggle)):
+        # -- Klima-Alarme, 24/7. Je Parameter waehlbar (…_alarm_modus):
+        #    "Toleranz" -> Alarm ab Sollwert +- (Toleranz + Margin)
+        #    "Min/Max"  -> Alarm unterhalb …_alarm_min oder oberhalb …_alarm_max
+        async def klima_alarm(akey, wert, ziel, modus, band, amin, amax,
+                              toggle, icon, label, einheit):
+            if wert is None:
+                self._alert_on[akey] = False
+                return
+            if modus == "Min/Max":
+                aus = (amin is not None and amax is not None
+                       and (wert < amin or wert > amax))
+                detail = "[%s] %s %.1f%s (erlaubt %.1f–%.1f%s)." % (
+                    name, label, wert, einheit, amin, amax, einheit)
+            else:
+                aus = (ziel is not None and band > 0 and abs(wert - ziel) > band)
+                detail = "[%s] %s %.1f%s (Ziel %.1f%s, Alarm ab ±%.1f%s)." % (
+                    name, label, wert, einheit, ziel, einheit, band, einheit)
+            if aus and not self._alert_on.get(akey) and ctx.sw(toggle):
                 await melde(akey, "%s ControlOS: %s außerhalb" % (icon, label),
-                            "[%s] %s %.1f%s (Ziel %.1f%s, Alarm ab ±%.1f%s)." % (
-                                name, label, wert, einheit, ziel, einheit,
-                                band, einheit))
+                            detail)
             self._alert_on[akey] = aus
 
         await klima_alarm(
             "ktemp", data.get("data_temp_luft"), data.get("data_ziel_temp"),
+            ctx.sel_raw("temp_alarm_modus") or "Toleranz",
             ctx.num("temp_toleranz", 0.5) + ctx.num("temp_alarm_margin", 3),
+            ctx.num("temp_alarm_min", 16), ctx.num("temp_alarm_max", 30),
             "notify_temp", "🌡️", "Temperatur", "°C")
         await klima_alarm(
             "kfeuchte", data.get("data_feuchte_luft"), data.get("data_ziel_feuchte"),
+            ctx.sel_raw("feuchte_alarm_modus") or "Toleranz",
             ctx.num("feuchte_toleranz", 5) + ctx.num("feuchte_alarm_margin", 15),
+            ctx.num("feuchte_alarm_min", 30), ctx.num("feuchte_alarm_max", 70),
             "notify_feuchte", "💧", "Feuchte", "%")
         if (ctx.sel_raw("klima_modus") or "VPD") == "VPD":
             await klima_alarm(
                 "kvpd", data.get("data_vpd"), ctx.num("vpd_ziel", 1.2),
+                ctx.sel_raw("vpd_alarm_modus") or "Toleranz",
                 ctx.num("vpd_toleranz", 0.2) + ctx.num("vpd_alarm_margin", 0.5),
+                ctx.num("vpd_alarm_min", 0.4), ctx.num("vpd_alarm_max", 1.8),
                 "notify_vpd", "💨", "VPD", " kPa")
         else:
             self._alert_on["kvpd"] = False

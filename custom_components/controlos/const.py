@@ -106,10 +106,17 @@ NUMBER_PARAMS = {
     "licht_helligkeit": {"name": "Licht Helligkeit", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:brightness-6", "default": 100},
     "mqtt_watchdog_min": {"name": "MQTT-Watchdog Zeitfenster", "min": 0, "max": 60, "step": 1, "unit": "min", "icon": "mdi:timer-alert", "default": 10},
     "co2_alarm_max": {"name": "CO2-Alarm ab", "min": 800, "max": 3000, "step": 50, "unit": "ppm", "icon": "mdi:molecule-co2", "default": 1500},
-    # -- Klima-Alarm-Margins (Alarm ab Sollwert +- (Toleranz + Margin)) --
+    # -- Klima-Alarm-Modus "Toleranz": Alarm ab Sollwert +- (Toleranz + Margin) --
     "temp_alarm_margin":    {"name": "Temp-Alarm-Puffer",    "min": 0, "max": 15, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-alert", "default": 3},
     "feuchte_alarm_margin": {"name": "Feuchte-Alarm-Puffer", "min": 0, "max": 40, "step": 1, "unit": "%", "icon": "mdi:water-alert", "default": 15},
     "vpd_alarm_margin":     {"name": "VPD-Alarm-Puffer",     "min": 0, "max": 1.5, "step": 0.05, "unit": "kPa", "icon": "mdi:water-alert", "default": 0.5},
+    # -- Klima-Alarm-Modus "Min/Max": absolute untere/obere Alarmschwelle je Parameter --
+    "temp_alarm_min":    {"name": "Temp-Alarm min",    "min": 0, "max": 40, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-low",  "default": 16},
+    "temp_alarm_max":    {"name": "Temp-Alarm max",    "min": 0, "max": 50, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-high", "default": 30},
+    "feuchte_alarm_min": {"name": "Feuchte-Alarm min", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:water-minus", "default": 30},
+    "feuchte_alarm_max": {"name": "Feuchte-Alarm max", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:water-plus",  "default": 70},
+    "vpd_alarm_min":     {"name": "VPD-Alarm min",     "min": 0, "max": 3, "step": 0.05, "unit": "kPa", "icon": "mdi:water-minus", "default": 0.4},
+    "vpd_alarm_max":     {"name": "VPD-Alarm max",     "min": 0, "max": 4, "step": 0.05, "unit": "kPa", "icon": "mdi:water-plus",  "default": 1.8},
     "sunrise_dauer": {"name": "Sonnenaufgang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-up", "default": 30},
     "sunset_dauer":  {"name": "Sonnenuntergang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-down", "default": 30},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
@@ -209,6 +216,10 @@ SELECT_PARAMS = {
     "zelt_typ":        {"name": "Zelt-Typ", "icon": "mdi:home-group", "options": ZELT_TYPEN, "default": "Growzelt"},
     "bluetezeit_einheit": {"name": "Blütezeit-Einheit", "icon": "mdi:calendar-clock", "options": ["Wochen", "Tage"], "default": "Wochen"},
     "benachrichtigung_modus": {"name": "Benachrichtigung an", "icon": "mdi:cellphone-message", "options": ["Alle Geräte", "Auswahl"], "default": "Alle Geräte"},
+    # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
+    "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
+    "feuchte_alarm_modus": {"name": "Feuchte-Alarmart", "icon": "mdi:water-alert",       "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
+    "vpd_alarm_modus":     {"name": "VPD-Alarmart",     "icon": "mdi:water-alert",       "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
     "speicherzeit":    {"name": "Speicherzeit Messdaten", "icon": "mdi:database-clock", "options": ["Unbegrenzt", "12 Monate", "6 Monate", "3 Monate"], "default": "Unbegrenzt"},
     "graph_zeitraum":  {"name": "Graph-Zeitraum", "icon": "mdi:chart-timeline", "options": ["1 h", "6 h", "12 h", "24 h", "48 h", "7 Tage"], "default": "24 h"},
     "co2_betrieb_modus": {"name": "CO2 Betriebsmodus", "icon": "mdi:molecule-co2", "options": ["Dauerbetrieb", "Intervall"], "default": "Dauerbetrieb"},
