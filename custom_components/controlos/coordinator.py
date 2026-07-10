@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 import time as _time
+import uuid as _uuid
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 
@@ -22,7 +23,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
 from .entity_base import area_slug
-from .ki import KiEngine
+from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
 
 _LOGGER = logging.getLogger(__name__)
@@ -714,7 +715,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 mae_txt, self.ki.n_rows, alter_h)
         else:
             data["ki_status"] = "sammelt Daten (%d Zeilen, ab %d wird trainiert)" % (
-                self.ki.n_rows, 2000)
+                self.ki.n_rows, KI_MIN_ROWS)
 
         # Speicherzeit: taeglich aufraeumen
         if now - self._ki_cleanup_ts > 86400:
@@ -960,3 +961,41 @@ class ControlosCoordinator(DataUpdateCoordinator):
             store.remove_notify_target(self.entry.entry_id, idx)
             rem.refresh_options()
         await self.async_request_refresh()
+
+    async def async_notiz_anlegen(self) -> None:
+        """Notiz/Erinnerung aus dem Formular anlegen. Die gewaehlte
+        Erinnerungsart setzt intern das bewaehrte Steuerwort im Titel
+        (!täglich / !wöchentlich / !stumm; Einmalig = ohne)."""
+        store = self._store()
+        ents = self._ents()
+        text_ent = ents.get("notiz_text")
+        text = (getattr(text_ent, "native_value", "") or "").strip()
+        if store is None or not text:
+            return
+        art = (getattr(ents.get("notiz_erinnerung"), "current_option", None)
+               or "Einmalig")
+        suffix = ""
+        if art.startswith("Täglich"):
+            suffix = " !täglich"
+        elif art.startswith("Wöchentlich"):
+            suffix = " !wöchentlich"
+        elif art.startswith("Stumm"):
+            suffix = " !stumm"
+        due = getattr(ents.get("notiz_datum"), "native_value", None)
+        if not isinstance(due, date):
+            due = date.today()
+        items = store.todos(self.entry.entry_id)
+        items.append({
+            "uid": _uuid.uuid4().hex,
+            "summary": text + suffix,
+            "status": "needs_action",
+            "due": due.isoformat(),
+            "description": None,
+        })
+        store.set_todos(self.entry.entry_id, items)
+        todo = ents.get("notizen")
+        if todo is not None:
+            todo.async_write_ha_state()
+        # Formular leeren fuer die naechste Notiz
+        if text_ent is not None:
+            await text_ent.async_set_value("")

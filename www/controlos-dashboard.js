@@ -818,15 +818,20 @@ function kalenderView(a) {
       ] },
       { type: "grid", cards: [
         sep("Notizen & Erinnerungen", "mdi:notebook-edit"),
+        // Anlege-Formular: Erinnerungsart direkt als Auswahl (statt Steuerwort)
+        { type: "entities", entities: [
+          { entity: "text.controlos_" + s + "_notiz_text", name: "Notiz / Erinnerung" },
+          { entity: "date.controlos_" + s + "_notiz_datum", name: "Fällig am" },
+        ] },
+        bsel(sp + "notiz_erinnerung", "Erinnerung (Häufigkeit)"),
+        bbtn(bp + "notiz_anlegen", "Notiz hinzufügen", "mdi:note-plus"),
         { type: "todo-list", entity: "todo.controlos_" + s + "_notizen",
           hide_completed: false },
         { type: "markdown", content:
-          "Einträge mit **Fälligkeitsdatum** werden als Push gemeldet — Häufigkeit per Steuerwort " +
-          "im Titel oder der Beschreibung:\n\n" +
-          "- *(ohne)* → **einmalig** am Fälligkeitstag\n" +
-          "- `!täglich` → jeden Tag, bis abgehakt\n" +
-          "- `!wöchentlich` → alle 7 Tage\n" +
-          "- `!stumm` → keine Benachrichtigung" },
+          "Einträge mit **Fälligkeitsdatum** werden als Push gemeldet. " +
+          "Die Häufigkeit wählst du oben beim Anlegen — bei bestehenden " +
+          "Einträgen weiterhin per Steuerwort im Titel änderbar " +
+          "(`!täglich`, `!wöchentlich`, `!stumm`)." },
       ] },
     ] };
 }

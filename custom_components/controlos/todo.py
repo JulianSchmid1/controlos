@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .entity_base import area_slug, device_info_for
+from .entity_base import area_slug, device_info_for, store_entity
 
 
 async def async_setup_entry(
@@ -72,6 +72,12 @@ class ControlosTodo(TodoListEntity):
     @property
     def device_info(self):
         return device_info_for(self._entry)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Registrieren, damit der Coordinator nach programmatischem Anlegen
+        # (Notiz-Formular) die Liste aktualisieren kann.
+        store_entity(self.hass, self._entry, "notizen", self)
 
     def _store(self):
         return self.hass.data.get(DOMAIN, {}).get("store")

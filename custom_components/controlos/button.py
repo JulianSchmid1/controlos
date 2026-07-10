@@ -52,3 +52,5 @@ class ControlosButton(ButtonEntity):
             await coord.async_notify_add()
         elif self._key == "benachrichtigung_remove":
             await coord.async_notify_remove()
+        elif self._key == "notiz_anlegen":
+            await coord.async_notiz_anlegen()

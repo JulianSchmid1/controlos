@@ -132,6 +132,18 @@ class KiEngine:
         with self._lock:
             rest = list(self._buf)
         rows = self._load_rows() + rest
+        # Korrupte Zeilen (z.B. abgebrochene Schreibvorgaenge) vorab
+        # aussortieren - eine einzelne defekte Zeile darf das Training
+        # nicht abbrechen (ts/vpd werden unten ungeschuetzt gelesen).
+        sauber = []
+        for r in rows:
+            try:
+                float(r["ts"])
+                float(r["vpd"])
+                sauber.append(r)
+            except (TypeError, ValueError, KeyError):
+                continue
+        rows = sauber
         self.n_rows = len(rows)
         self.trained_at = time.time()
         if len(rows) < MIN_ROWS:
@@ -179,13 +191,18 @@ class KiEngine:
                     continue
             if len(xs) < MIN_ROWS // 2:
                 continue
+            # Ehrliche Validierung: Modell auf den ersten 80 % fitten, MAE
+            # auf den letzten 20 % messen (out-of-sample). Das finale Modell
+            # nutzt danach ALLE Daten.
+            cut = int(len(xs) * 0.8)
+            w_val = self._ridge(xs[:cut], ys[:cut])
+            if w_val is None:
+                continue
+            fehler = [abs(sum(wi * xi for wi, xi in zip(w_val, x)) - y)
+                      for x, y in zip(xs[cut:], ys[cut:])]
             w = self._ridge(xs, ys)
             if w is None:
                 continue
-            # Guete: MAE ueber die letzten 20 % (grobe Validierung)
-            cut = int(len(xs) * 0.8)
-            fehler = [abs(sum(wi * xi for wi, xi in zip(w, x)) - y)
-                      for x, y in zip(xs[cut:], ys[cut:])]
             neue_modelle[hmin] = w
             neue_mae[hmin] = (round(sum(fehler) / len(fehler), 3)
                               if fehler else 0.0)

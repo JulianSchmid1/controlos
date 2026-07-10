@@ -21,6 +21,7 @@ DATE_PARAMS = {
     "grow_start":   {"name": "Grow-Startdatum",  "icon": "mdi:calendar-start"},
     "bluete_start": {"name": "Blüte-Startdatum", "icon": "mdi:flower"},
     "strain_start": {"name": "Strain-Startdatum", "icon": "mdi:calendar-plus"},
+    "notiz_datum":  {"name": "Notiz fällig am",   "icon": "mdi:calendar-alert"},
 }
 
 

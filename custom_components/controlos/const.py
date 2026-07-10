@@ -14,6 +14,7 @@ PLATFORMS = ["number", "select", "switch", "sensor", "binary_sensor",
 TEXT_PARAMS = {
     "grow_name":   {"name": "Grow-Name", "icon": "mdi:sprout", "default": "Mein Grow"},
     "strain_name": {"name": "Strain (Sorte)", "icon": "mdi:cannabis", "default": ""},
+    "notiz_text":  {"name": "Neue Notiz / Erinnerung", "icon": "mdi:note-edit", "default": ""},
 }
 
 # TIME: Licht-Zeitplan je Bereich (zeitbasiert -> unabhaengig von Sensorik)
@@ -85,6 +86,7 @@ BUTTON_PARAMS = {
     "grow_neu":      {"name": "Neuen Grow starten",         "icon": "mdi:sprout"},
     "benachrichtigung_add":    {"name": "Zielgerät hinzufügen",         "icon": "mdi:cellphone-check"},
     "benachrichtigung_remove": {"name": "Gewähltes Zielgerät entfernen", "icon": "mdi:cellphone-remove"},
+    "notiz_anlegen": {"name": "Notiz hinzufügen", "icon": "mdi:note-plus"},
 }
 
 # ---------------------------------------------------------------------------
@@ -232,6 +234,8 @@ SELECT_PARAMS = {
     "zelt_typ":        {"name": "Zelt-Typ", "icon": "mdi:home-group", "options": ZELT_TYPEN, "default": "Growzelt"},
     "bluetezeit_einheit": {"name": "Blütezeit-Einheit", "icon": "mdi:calendar-clock", "options": ["Wochen", "Tage"], "default": "Wochen"},
     "benachrichtigung_modus": {"name": "Benachrichtigung an", "icon": "mdi:cellphone-message", "options": ["Alle Geräte", "Auswahl"], "default": "Alle Geräte"},
+    # Erinnerungsart beim Anlegen einer Notiz (setzt intern das Steuerwort)
+    "notiz_erinnerung": {"name": "Erinnerung", "icon": "mdi:bell-ring", "options": ["Einmalig (am Fälligkeitstag)", "Täglich bis erledigt", "Wöchentlich", "Stumm (keine Meldung)"], "default": "Einmalig (am Fälligkeitstag)"},
     # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
     "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
     "feuchte_alarm_modus": {"name": "Feuchte-Alarmart", "icon": "mdi:water-alert",       "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
