@@ -550,12 +550,26 @@ class ControlosCoordinator(DataUpdateCoordinator):
                             detail)
             self._alert_on[akey] = aus
 
-        await klima_alarm(
-            "ktemp", data.get("data_temp_luft"), data.get("data_ziel_temp"),
-            ctx.sel_raw("temp_alarm_modus") or "Toleranz",
-            ctx.num("temp_toleranz", 0.5) + ctx.num("temp_alarm_margin", 3),
-            ctx.num("temp_alarm_min", 16), ctx.num("temp_alarm_max", 30),
-            "notify_temp", "🌡️", "Temperatur", "°C")
+        # Bei aktiver VPD->Temp-Kopplung (regelung: geschlossenes System, VPD,
+        # Tag, Prio "feuchte", AC da) weicht die Temperatur BEWUSST vom
+        # Temp-Ziel ab -> der Toleranz-Alarm wuerde faelschlich feuern.
+        # Dann Temperatur nur im Min/Max-Modus bewachen.
+        vpd_temp_kopplung = (
+            (ctx.sel_raw("system_modus") or "") == "Geschlossenes System"
+            and (ctx.sel_raw("klima_modus") or "VPD") == "VPD"
+            and bool(data.get("data_ist_tag"))
+            and (ctx.sel_raw("prio") or "temperatur") == "feuchte"
+            and ctx.sw("vorhanden_klima") and ctx.sel("geraet_klima"))
+        temp_alarm_modus = ctx.sel_raw("temp_alarm_modus") or "Toleranz"
+        if vpd_temp_kopplung and temp_alarm_modus != "Min/Max":
+            self._alert_on["ktemp"] = False
+        else:
+            await klima_alarm(
+                "ktemp", data.get("data_temp_luft"), data.get("data_ziel_temp"),
+                temp_alarm_modus,
+                ctx.num("temp_toleranz", 0.5) + ctx.num("temp_alarm_margin", 3),
+                ctx.num("temp_alarm_min", 16), ctx.num("temp_alarm_max", 30),
+                "notify_temp", "🌡️", "Temperatur", "°C")
         await klima_alarm(
             "kfeuchte", data.get("data_feuchte_luft"), data.get("data_ziel_feuchte"),
             ctx.sel_raw("feuchte_alarm_modus") or "Toleranz",

@@ -245,7 +245,7 @@ class Regler:
 
         if not ctx.sw("aktiv"):
             shadow["status"] = "[%s] Inaktiv" % self.name
-            for k in ("licht", "undercanopy", "befeuchter", "entfeuchter",
+            for k in ("licht", "undercanopy", "uv", "befeuchter", "entfeuchter",
                       "heizung", "klima", "abluft", "co2", "ventilator", "umluft"):
                 shadow[k] = "-"
             return shadow, devices, klima_cmds, bias_out
@@ -391,6 +391,44 @@ class Regler:
             else:
                 shadow["undercanopy"] = "kein Gerät"
 
+        # ===== UV-Licht: reiner Zeitplan am Licht-Fenster (wie Licht ohne =====
+        # ===== Mindestlaufzeit). Standard = Dauer mittig im Lichttag       =====
+        # ===== (UV-A/B); IPM = buendig VOR Licht-Start und NACH Licht-Ende =====
+        # ===== (UVC-Sterilisation, laeuft auch vor Sunrise / nach Sunset). =====
+        d_uv = dev("uv", "uv")
+        if d_uv:
+            uv_modus = ctx.sel_raw("uv_modus") or "Standard (Tagesmitte)"
+            uv_on, uv_info = False, "kein Licht-Fenster"
+            if l_start and l_ende:
+                now_t = datetime.now().time()
+                now_m = now_t.hour * 60 + now_t.minute + now_t.second / 60.0
+                s_m = l_start.hour * 60 + l_start.minute
+                e_m = l_ende.hour * 60 + l_ende.minute
+                laenge = ((e_m - s_m) % 1440) or 1440
+
+                def _win(a, dauer):
+                    """now_m im Fenster [a, a+dauer), Minuten mod 1440."""
+                    b = (a + dauer) % 1440
+                    a = a % 1440
+                    return (a <= now_m < b) if a <= b else (now_m >= a or now_m < b)
+
+                if uv_modus.startswith("IPM"):
+                    dm = ctx.num("uv_dauer_morgens", 10)
+                    da = ctx.num("uv_dauer_abends", 10)
+                    uv_on = _win(s_m - dm, dm) or _win(e_m, da)
+                    uv_info = "IPM %d/%d min" % (dm, da)
+                else:
+                    dauer = min(ctx.num("uv_dauer", 60), laenge)
+                    mitte = (s_m + laenge / 2.0) % 1440
+                    uv_on = _win(mitte - dauer / 2.0, dauer)
+                    uv_info = "Tagesmitte %d min" % dauer
+            devices["uv"] = {"entity": d_uv, "on": bool(uv_on), "pct": None,
+                             "stufe": None, "stufe_entity": None}
+            shadow["uv"] = "%s (%s, %s) -> %s" % (
+                "AN" if uv_on else "AUS", uv_info, _fenster, d_uv)
+        else:
+            shadow["uv"] = "kein Gerät"
+
         # Nacht statisch: nachts Feuchte statt VPD regeln (Schimmelschutz)
         eff_modus = modus
         if modus == "VPD" and not ist_tag and ctx.sw("nacht_statisch"):
@@ -407,7 +445,7 @@ class Regler:
                             ("heizung", d_heiz), ("klima", d_klima),
                             ("co2", d_co2), ("abluft", d_abluft),
                             ("ventilator", d_vent), ("umluft", d_umluft),
-                            ("licht", d_licht)):
+                            ("licht", d_licht), ("uv", d_uv)):
             if geid and not geraet_ok(geid):
                 ausgefallen[gname] = geid
 

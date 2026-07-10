@@ -21,16 +21,16 @@ const SEL_SENSOR = ["sensor_temp_luft", "sensor_feuchte_luft", "sensor_co2",
   "sensor_temp_zuluft", "sensor_feuchte_zuluft", "sensor_temp_blatt"];
 const SEL_GERAET = ["geraet_befeuchter", "geraet_entfeuchter", "geraet_klima",
   "geraet_heizung", "geraet_co2_ventil", "geraet_licht", "geraet_undercanopy",
-  "geraet_abluft", "geraet_ventilator", "geraet_umluft"];
+  "geraet_uv", "geraet_abluft", "geraet_ventilator", "geraet_umluft"];
 const SW_VORHANDEN = [
   "vorhanden_befeuchter", "vorhanden_entfeuchter", "vorhanden_klima",
   "vorhanden_heizung", "vorhanden_co2", "vorhanden_licht",
-  "vorhanden_undercanopy", "vorhanden_abluft", "vorhanden_ventilator",
-  "vorhanden_umluft",
+  "vorhanden_undercanopy", "vorhanden_uv", "vorhanden_abluft",
+  "vorhanden_ventilator", "vorhanden_umluft",
 ];
 const SW_OPTIONS = ["ki_engine", "ki_modus", "nacht_statisch"];
-const SHADOW = ["status", "licht", "undercanopy", "befeuchter", "entfeuchter",
-  "heizung", "klima", "abluft", "co2", "ventilator", "umluft"];
+const SHADOW = ["status", "licht", "undercanopy", "uv", "befeuchter",
+  "entfeuchter", "heizung", "klima", "abluft", "co2", "ventilator", "umluft"];
 
 function slug(name) {
   let o = "";
@@ -287,7 +287,7 @@ function monitorView(a, hass) {
   const B = "binary_sensor.controlos_" + s + "_data_";
   const wp = "switch.controlos_" + s + "_", sp = "select.controlos_" + s + "_";
   const shadowIcons = { status: "mdi:radar", licht: "mdi:lightbulb-on",
-    undercanopy: "mdi:lightbulb-group",
+    undercanopy: "mdi:lightbulb-group", uv: "mdi:sun-wireless",
     befeuchter: "mdi:air-humidifier",
     entfeuchter: "mdi:air-humidifier-off", heizung: "mdi:radiator",
     klima: "mdi:air-conditioner", abluft: "mdi:fan", co2: "mdi:molecule-co2",
@@ -471,8 +471,10 @@ function monitorView(a, hass) {
         sep("Steuerung", "mdi:radar"),
         ...SHADOW.filter((k) => k !== "status").map((k) => {
           const eid = S + k;
-          const label = k === "co2" ? "CO2" : k.charAt(0).toUpperCase() + k.slice(1);
+          const label = k === "co2" ? "CO2" : (k === "uv" ? "UV"
+            : k.charAt(0).toUpperCase() + k.slice(1));
           const selMap = { licht: "geraet_licht", undercanopy: "geraet_undercanopy",
+            uv: "geraet_uv",
             befeuchter: "geraet_befeuchter", entfeuchter: "geraet_entfeuchter",
             heizung: "geraet_heizung", klima: "geraet_klima",
             co2: "geraet_co2_ventil", abluft: "geraet_abluft",
@@ -908,6 +910,17 @@ function lichtView(a) {
         // (dimmbar = Rampe, nicht dimmbar = gestufter Sonnenaufgang)
         V(bsw(wp + "undercanopy_als_sonne", "Undercanopy als Sonnenauf-/-untergang",
               "mdi:weather-sunset"), sonne, dvUc),
+        // UV-Licht: Standard (UV-A/B, mittig im Lichttag) oder
+        // IPM (UVC-Sterilisation, buendig vor Licht-Start / nach Licht-Ende)
+        V(sep("UV-Licht", "mdi:sun-wireless"), cOn(wp + "vorhanden_uv")),
+        V(bsel(sp + "uv_modus", "Betriebsart (Standard / IPM)"),
+          cOn(wp + "vorhanden_uv")),
+        V(bslider(np + "uv_dauer", "Dauer (mittig im Lichttag)"),
+          cOn(wp + "vorhanden_uv"), cEq(sp + "uv_modus", "Standard (Tagesmitte)")),
+        V(bslider(np + "uv_dauer_morgens", "IPM: Dauer vor Licht-Start"),
+          cOn(wp + "vorhanden_uv"), cEq(sp + "uv_modus", "IPM (vor/nach Licht)")),
+        V(bslider(np + "uv_dauer_abends", "IPM: Dauer nach Licht-Ende"),
+          cOn(wp + "vorhanden_uv"), cEq(sp + "uv_modus", "IPM (vor/nach Licht)")),
       ] },
     ] };
 }

@@ -72,8 +72,9 @@ STD_PHASE_DEFAULTS = {
 }
 
 # Shadow-/Status-Ausgaenge der Regelung (Text-Sensoren je Bereich)
-SHADOW_KEYS = ["status", "licht", "undercanopy", "befeuchter", "entfeuchter",
-               "heizung", "klima", "abluft", "co2", "ventilator", "umluft"]
+SHADOW_KEYS = ["status", "licht", "undercanopy", "uv", "befeuchter",
+               "entfeuchter", "heizung", "klima", "abluft", "co2",
+               "ventilator", "umluft"]
 
 # Buttons je Bereich (Phasen-Override)
 BUTTON_PARAMS = {
@@ -119,6 +120,10 @@ NUMBER_PARAMS = {
     "vpd_alarm_max":     {"name": "VPD-Alarm max",     "min": 0, "max": 4, "step": 0.05, "unit": "kPa", "icon": "mdi:water-plus",  "default": 1.8},
     "sunrise_dauer": {"name": "Sonnenaufgang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-up", "default": 30},
     "sunset_dauer":  {"name": "Sonnenuntergang Dauer", "min": 0, "max": 120, "step": 5, "unit": "min", "icon": "mdi:weather-sunset-down", "default": 30},
+    # -- UV-Licht --
+    "uv_dauer":         {"name": "UV Dauer (Tagesmitte)", "min": 1, "max": 120, "step": 1, "unit": "min", "icon": "mdi:sun-wireless", "default": 60},
+    "uv_dauer_morgens": {"name": "UV Dauer morgens (vor Licht)", "min": 1, "max": 30, "step": 1, "unit": "min", "icon": "mdi:weather-sunset-up", "default": 10},
+    "uv_dauer_abends":  {"name": "UV Dauer abends (nach Licht)", "min": 1, "max": 30, "step": 1, "unit": "min", "icon": "mdi:weather-sunset-down", "default": 10},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
     "vpd_bias_tag":   {"name": "VPD-Bias Tag",   "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
     "vpd_bias_nacht": {"name": "VPD-Bias Nacht", "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
@@ -167,7 +172,7 @@ for _pk in PHASE_KEYS:
 # SWITCH: Aktiv, Modi-Flags, Geraete-Vorhanden / Dimmbar / Dual
 # ---------------------------------------------------------------------------
 _DEVICES = ["befeuchter", "entfeuchter", "klima", "heizung", "co2",
-            "licht", "undercanopy", "abluft", "ventilator", "umluft"]
+            "licht", "undercanopy", "uv", "abluft", "ventilator", "umluft"]
 _DIMMBAR = ["befeuchter", "entfeuchter", "heizung", "abluft",
             "licht", "undercanopy", "ventilator"]
 
@@ -198,6 +203,8 @@ for _d in _DEVICES:
 for _d in _DIMMBAR:
     SWITCH_PARAMS["dimmbar_%s" % _d] = {
         "name": "%s dimmbar?" % _d.capitalize(), "icon": "mdi:brightness-6", "default": False}
+SWITCH_PARAMS["vorhanden_uv"]["name"] = "UV-Licht vorhanden?"
+SWITCH_PARAMS["vorhanden_uv"]["icon"] = "mdi:sun-wireless-outline"
 
 # ---------------------------------------------------------------------------
 # SELECT: Modus-Auswahlen (statische Optionen). Geraete-Auswahl-Selects mit
@@ -207,6 +214,9 @@ SELECT_PARAMS = {
     "betriebsmodus":   {"name": "Betriebsmodus", "icon": "mdi:shield-check", "options": ["Monitor", "Steuern"], "default": "Monitor"},
     "licht_zyklus":    {"name": "Lichtzyklus", "icon": "mdi:sun-clock", "options": ["Manuell", "24/0", "22/2", "20/4", "18/6", "16/8", "14/10", "12/12", "10/14"], "default": "18/6"},
     "licht_modus":     {"name": "Licht Schaltmodus", "icon": "mdi:weather-sunset", "options": ["An/Aus", "Sonnenauf-/-untergang"], "default": "An/Aus"},
+    # UV: "Standard" = Leuchtdauer mittig in den Lichttag gelegt (UV-A/B);
+    # "IPM" = buendig VOR Licht-Start und NACH Licht-Ende (UVC-Sterilisation).
+    "uv_modus":        {"name": "UV Betriebsart", "icon": "mdi:sun-wireless", "options": ["Standard (Tagesmitte)", "IPM (vor/nach Licht)"], "default": "Standard (Tagesmitte)"},
     "klima_modus":     {"name": "Klima Modus",     "icon": "mdi:thermostat", "options": ["VPD", "Statisch"], "default": "VPD"},
     "system_modus":    {"name": "System Modus",    "icon": "mdi:tent", "options": ["Geschlossenes System", "Offenes System"], "default": "Geschlossenes System"},
     "klima_steuermodus": {"name": "Klima Steuermodus", "icon": "mdi:tune", "options": ["Area-Sensor", "Geräte-Sensor", "Hybrid", "Autonom"], "default": "Autonom"},
@@ -246,6 +256,7 @@ _DEV_DOMAINS = {
     "co2_ventil": ["switch"],
     "licht": ["switch", "light"],
     "undercanopy": ["switch", "light"],
+    "uv": ["switch", "light"],
     "abluft": ["switch", "fan"],
     "ventilator": ["switch", "fan"],
     "umluft": ["switch", "fan"],

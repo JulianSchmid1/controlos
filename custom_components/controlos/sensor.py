@@ -12,6 +12,7 @@ from .entity_base import area_slug, device_info_for
 
 _SHADOW_ICONS = {"status": "mdi:radar", "licht": "mdi:lightbulb-on",
                  "undercanopy": "mdi:lightbulb-group",
+                 "uv": "mdi:sun-wireless",
                  "befeuchter": "mdi:air-humidifier",
                  "entfeuchter": "mdi:air-humidifier-off", "heizung": "mdi:radiator",
                  "klima": "mdi:air-conditioner", "abluft": "mdi:fan",
