@@ -935,6 +935,11 @@ function klimaView(a) {
         V(bslider(np + "klima_min_laufzeit", "Mindestlaufzeit (Kompressorschutz)"),
           cOn(wp + "vorhanden_klima"),
           { condition: "state", entity: sp + "klima_steuermodus", state_not: "Autonom" }),
+        // Grenzen des dynamischen AC-Ziels (nur bei VPD->Temp-Kopplung)
+        V(bslider(np + "klima_kopplung_max", "VPD-Kopplung: Temp-Obergrenze"),
+          cOn(wp + "vorhanden_klima"), cEq(sp + "prio", "feuchte")),
+        V(bslider(np + "klima_kopplung_min", "VPD-Kopplung: Temp-Untergrenze"),
+          cOn(wp + "vorhanden_klima"), cEq(sp + "prio", "feuchte")),
         Object.assign(sep("CO2-Steuerung", "mdi:molecule-co2"), co2vis),
         Object.assign(bsw(wp + "co2_automatik", "CO2 Automatik", "mdi:robot-outline"), co2vis),
         Object.assign(bsel(sp + "co2_betrieb_modus", "Betriebsart (Dauer/Intervall)"), co2vis),

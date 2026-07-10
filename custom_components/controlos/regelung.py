@@ -592,8 +592,12 @@ class Regler:
             svp_need = vpd_ziel / max(0.01, 1.0 - hum / 100.0)
             if 0.05 < svp_need < 8.0:
                 lv = math.log(svp_need / 0.6108)
-                klima_ziel_eff = max(16.0, min(
-                    30.0, round(237.3 * lv / (17.27 - lv), 1)))
+                # Nutzer-Grenzen: die Kopplung darf die eingestellte Ober-/
+                # Untergrenze nie verlassen.
+                k_min = ctx.num("klima_kopplung_min", 16.0)
+                k_max = max(ctx.num("klima_kopplung_max", 30.0), k_min)
+                klima_ziel_eff = max(k_min, min(
+                    k_max, round(237.3 * lv / (17.27 - lv), 1)))
 
         klima_dry_need = False
         if hum is not None and not ent_da and "dry" in klima_modes:

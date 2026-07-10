@@ -138,6 +138,9 @@ NUMBER_PARAMS = {
     "klima_ziel_nacht": {"name": "AC-Ziel Nacht", "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 22},
     "klima_hybrid_gewicht": {"name": "Klima Hybrid-Gewicht (% Area)", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:scale-balance", "default": 50},
     "klima_min_laufzeit": {"name": "AC Mindestlaufzeit", "min": 0, "max": 30, "step": 0.5, "unit": "min", "icon": "mdi:timer-lock", "default": 3},
+    # Grenzen fuer das dynamische AC-Ziel der VPD->Temp-Kopplung (prio=feuchte)
+    "klima_kopplung_min": {"name": "VPD-Kopplung Temp-Untergrenze", "min": 10, "max": 30, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-chevron-down", "default": 16},
+    "klima_kopplung_max": {"name": "VPD-Kopplung Temp-Obergrenze",  "min": 15, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:thermometer-chevron-up",   "default": 30},
     # -- Entfeuchter-Steuerung --
     "entfeuchter_hybrid_gewicht": {"name": "Entf. Hybrid-Gewicht (% Area)", "min": 0, "max": 100, "step": 1, "unit": "%", "icon": "mdi:scale-balance", "default": 50},
     "entfeuchter_min_laufzeit": {"name": "Entfeuchter Mindestlaufzeit", "min": 0, "max": 30, "step": 0.5, "unit": "min", "icon": "mdi:timer-lock", "default": 3},
