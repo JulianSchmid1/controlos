@@ -17,7 +17,8 @@ from datetime import time as dt_time
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (async_track_state_change_event,
+                                          async_track_time_interval)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
@@ -112,6 +113,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         self._alert_on: dict = {}      # Alarm-Key -> aktueller Zustand
         self._dev_track: dict = {}     # geraet_*-Select -> zuletzt zugewiesen
         self._pe_loaded = False        # Phasen-Editor-Werte initial geladen?
+        self._ramp_last: dict = {}     # Rampen-Ticker: zuletzt gesendetes %
 
     # -- Zugriff --
     def _ents(self):
@@ -147,6 +149,77 @@ class ControlosCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
 
         return async_track_state_change_event(self.hass, ids, _changed)
+
+    # -- Sonnenauf-/-untergang: feiner Dimm-Ticker -----------------------
+    def _aktive_rampe(self, ctx):
+        """(name, dimmer_eid, pct) fuer die gerade aktive Sonnenrampe,
+        sonst None. Gleiche Formel/ Rundung wie die Regelung."""
+        if not (ctx.sw("aktiv")
+                and ctx.sel_raw("betriebsmodus") == "Steuern"
+                and (ctx.sel_raw("licht_modus") or "An/Aus")
+                == "Sonnenauf-/-untergang"):
+            return None
+        l_start, l_ende = ctx.t("licht_start"), ctx.t("licht_ende")
+        if not (l_start and l_ende):
+            return None
+        in_win, since, until, _ = Regler._licht_window(
+            datetime.now().time(), l_start, l_ende)
+        sunrise = int(ctx.num("sunrise_dauer", 30))
+        sunset = int(ctx.num("sunset_dauer", 30))
+        if not in_win or (since >= sunrise and until >= sunset):
+            return None  # keine Rampe aktiv (Kern-Tag oder Nacht)
+        hell = int(ctx.num("licht_helligkeit", 100))
+        # Rampendes Geraet wie in der Regelung: UC-als-Sonne rampt die UC,
+        # sonst rampt das (dimmbare) Hauptlicht.
+        if ctx.sw("undercanopy_als_sonne"):
+            name, vorh, dimb, dsel = ("undercanopy", "vorhanden_undercanopy",
+                                      "dimmbar_undercanopy",
+                                      "dimmer_undercanopy")
+        else:
+            name, vorh, dimb, dsel = ("licht", "vorhanden_licht",
+                                      "dimmbar_licht", "dimmer_licht")
+        if not (ctx.sw(vorh) and ctx.sw(dimb)):
+            return None
+        dim = ctx.sel(dsel)
+        if not dim:
+            return None
+        return name, dim, Regler._ramp_pct(since, until, sunrise, sunset, hell)
+
+    def setup_ramp_ticker(self):
+        """3s-Ticker fuer 1%-genaue Sonnenrampen: sendet den Dimmwert immer
+        dann, wenn sich das ganzzahlige Prozent aendert (der 30s-Regeltick
+        wuerde je nach Rampendauer 1-4%-Spruenge machen). Ausserhalb einer
+        Rampe tut der Ticker nichts."""
+        async def _tick(_now):
+            ctx = _Ctx(self.hass, self._ents())
+            rampe = self._aktive_rampe(ctx)
+            if rampe is None:
+                if self._ramp_last:
+                    self._ramp_last.clear()
+                return
+            name, dim, pct = rampe
+            if pct <= 0 or self._ramp_last.get(name) == pct:
+                return
+            self._ramp_last[name] = pct
+            try:
+                if dim.startswith("light."):
+                    await self.hass.services.async_call(
+                        "light", "turn_on",
+                        {"entity_id": dim, "brightness_pct": pct},
+                        blocking=False)
+                elif dim.startswith("fan."):
+                    await self.hass.services.async_call(
+                        "fan", "set_percentage",
+                        {"entity_id": dim, "percentage": pct}, blocking=False)
+                elif dim.startswith("number."):
+                    await self.hass.services.async_call(
+                        "number", "set_value",
+                        {"entity_id": dim, "value": pct}, blocking=False)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Rampen-Ticker %s", dim)
+
+        return async_track_time_interval(self.hass, _tick,
+                                         timedelta(seconds=3))
 
     def _source(self, ctx, sel_key):
         return ctx.fnum(ctx.sel(sel_key))

@@ -78,6 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unsub = coordinator.setup_change_listener()
     if unsub:
         entry.async_on_unload(unsub)
+    # Feiner 3s-Ticker fuer 1%-genaue Sonnenauf-/-untergangs-Rampen
+    entry.async_on_unload(coordinator.setup_ramp_ticker())
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _LOGGER.info("ControlOS-Bereich eingerichtet: %s", entry.title)
     return True
