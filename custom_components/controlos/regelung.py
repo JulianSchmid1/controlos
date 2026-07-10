@@ -92,19 +92,22 @@ class Regler:
     def pair_hyst(self, ka, kb, val, lo, hi, target, nz,
                   a_present, b_present, a_dual, b_dual, force_off=False,
                   a_min=None, b_min=None):
-        # Einzelgeraet: am ZIEL abschalten (saubere Hysterese, kein Uebertrocknen
-        # bis zur gegenueberliegenden Bandkante). Sind BEIDE Geraete vorhanden,
-        # bleibt ein Deadband target±nz, damit sie sich nicht gegenseitig jagen.
+        # Einzelgeraet: Dual-Mode entscheidet ueber die Hysterese-Breite.
+        # Dual AN  = halbiert: am ZIEL abschalten (kein Uebertrocknen).
+        # Dual AUS = voll: erst an der gegenueberliegenden Bandkante aus
+        #            (sinnvoll fuer sehr traege Geraete).
+        # Sind BEIDE Geraete vorhanden, bleibt ein Deadband target±nz,
+        # damit sie sich nicht gegenseitig jagen.
         # a_min/b_min = geraetespezifische Mindestlaufzeit (Sekunden).
         both = a_present and b_present
         if a_present:
-            a_off = (target + nz) if both else target
+            a_off = (target + nz) if both else (target if a_dual else lo)
             a_on = self.latch(ka, val >= hi, val <= a_off,
                               force_off=force_off, min_s=a_min)
         else:
             a_on = self.latch(ka, False, True)
         if b_present:
-            b_off = (target - nz) if both else target
+            b_off = (target - nz) if both else (target if b_dual else hi)
             b_on = self.latch(kb, val <= lo, val >= b_off,
                               force_off=force_off, min_s=b_min)
         else:

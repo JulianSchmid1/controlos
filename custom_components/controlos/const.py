@@ -193,8 +193,12 @@ SWITCH_PARAMS = {
     "notify_temp":    {"name": "Meldung: Temperatur-Alarm", "icon": "mdi:bell", "default": True},
     "notify_feuchte": {"name": "Meldung: Feuchte-Alarm",    "icon": "mdi:bell", "default": True},
     "notify_vpd":     {"name": "Meldung: VPD-Alarm",        "icon": "mdi:bell", "default": True},
-    "dual_befeuchter":  {"name": "Befeuchter Dual-Mode", "icon": "mdi:target", "default": False},
-    "dual_entfeuchter": {"name": "Entfeuchter Dual-Mode", "icon": "mdi:target", "default": False},
+    # "Enge Hysterese": Einzelgeraet schaltet am ZIEL ab (halbe Hysterese,
+    # z.B. gegen Uebertrocknen). Aus = volle Hysterese bis zur gegenueber-
+    # liegenden Bandkante (fuer sehr traege Geraete). Bei zwei Geraeten
+    # (Be- UND Entfeuchter) automatisch aktiv.
+    "dual_befeuchter":  {"name": "Befeuchter: enge Hysterese (am Ziel aus)", "icon": "mdi:arrow-collapse-vertical", "default": False},
+    "dual_entfeuchter": {"name": "Entfeuchter: enge Hysterese (am Ziel aus)", "icon": "mdi:arrow-collapse-vertical", "default": False},
     "undercanopy_als_sonne": {"name": "Undercanopy als Sonnenauf-/-untergang", "icon": "mdi:weather-sunset", "default": False},
 }
 for _d in _DEVICES:

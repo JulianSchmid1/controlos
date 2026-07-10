@@ -124,6 +124,123 @@ function mg(name, decimals, entities, extra) {
     show: { legend: false, fill: "fade" }, entities }, extra || {});
 }
 
+/* Entity-Picker: Select-Karte, die beim Klick einen Dialog MIT SUCHLEISTE
+   oeffnet (statt endlosem Dropdown-Scrollen bei langen Entity-Listen). */
+if (!customElements.get("controlos-entity-picker")) {
+  class ControlosEntityPicker extends HTMLElement {
+    setConfig(cfg) { this._cfg = cfg; }
+    getCardSize() { return 1; }
+    set hass(hass) {
+      this._hass = hass;
+      const st = hass.states[this._cfg.entity];
+      if (!this._card) {
+        this._card = document.createElement("ha-card");
+        this._card.style.cssText =
+          "display:flex;align-items:center;gap:12px;padding:8px 14px;" +
+          "border-radius:32px;cursor:pointer;min-height:48px;box-sizing:border-box;";
+        this._ic = document.createElement("ha-icon");
+        this._ic.style.cssText = "flex:none;opacity:.85;";
+        const col = document.createElement("div");
+        col.style.cssText = "display:flex;flex-direction:column;overflow:hidden;";
+        this._nm = document.createElement("span");
+        this._nm.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;" +
+          "overflow:hidden;text-overflow:ellipsis;";
+        this._val = document.createElement("span");
+        this._val.style.cssText = "font-size:12px;opacity:.7;white-space:nowrap;" +
+          "overflow:hidden;text-overflow:ellipsis;";
+        col.append(this._nm, this._val);
+        this._card.append(this._ic, col);
+        this._card.addEventListener("click", () => this._open());
+        this.append(this._card);
+      }
+      this._nm.textContent = this._cfg.name ||
+        (st && st.attributes.friendly_name) || this._cfg.entity;
+      this._val.textContent = st ? st.state : "?";
+      this._ic.setAttribute("icon", this._cfg.icon ||
+        (st && st.attributes.icon) || "mdi:format-list-bulleted");
+    }
+    _open() {
+      const st = this._hass.states[this._cfg.entity];
+      if (!st) return;
+      const opts = st.attributes.options || [];
+      const ov = document.createElement("div");
+      ov.style.cssText = "position:fixed;inset:0;z-index:10000;" +
+        "background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+      const box = document.createElement("div");
+      box.style.cssText = "background:var(--card-background-color,#1c1c1e);" +
+        "color:var(--primary-text-color,#fff);border-radius:16px;" +
+        "width:min(480px,92vw);max-height:75vh;display:flex;flex-direction:column;" +
+        "padding:14px;box-shadow:0 8px 40px rgba(0,0,0,.6);";
+      const inp = document.createElement("input");
+      inp.type = "search";
+      inp.placeholder = "Suchen… (Name oder Entity-ID)";
+      inp.style.cssText = "width:100%;box-sizing:border-box;padding:10px 14px;" +
+        "border:none;outline:none;border-radius:10px;" +
+        "background:var(--secondary-background-color,#2c2c2e);" +
+        "color:inherit;font-size:14px;margin-bottom:10px;";
+      const list = document.createElement("div");
+      list.style.cssText = "overflow:auto;flex:1;";
+      const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+      const esc = (e) => { if (e.key === "Escape") close(); };
+      const render = () => {
+        const q = inp.value.trim().toLowerCase();
+        list.textContent = "";
+        opts.filter((o) => {
+          if (!q) return true;
+          if (o.toLowerCase().includes(q)) return true;
+          const os = this._hass.states[o];
+          return ((os && os.attributes.friendly_name) || "")
+            .toLowerCase().includes(q);
+        }).slice(0, 300).forEach((o) => {
+          const row = document.createElement("div");
+          const aktiv = o === st.state;
+          const bg = aktiv ? "rgba(66,165,245,.25)" : "";
+          row.style.cssText = "padding:8px 12px;border-radius:10px;cursor:pointer;" +
+            (bg ? "background:" + bg + ";" : "");
+          const os = this._hass.states[o];
+          const fn = os && os.attributes.friendly_name;
+          const z1 = document.createElement("div");
+          z1.style.cssText = "font-size:14px;";
+          z1.textContent = fn || o;
+          row.append(z1);
+          if (fn && fn !== o) {
+            const z2 = document.createElement("div");
+            z2.style.cssText = "font-size:11px;opacity:.6;";
+            z2.textContent = o;
+            row.append(z2);
+          }
+          row.addEventListener("mouseenter", () => { row.style.background = "rgba(128,128,128,.25)"; });
+          row.addEventListener("mouseleave", () => { row.style.background = bg; });
+          row.addEventListener("click", () => {
+            this._hass.callService("select", "select_option",
+              { entity_id: this._cfg.entity, option: o });
+            close();
+          });
+          list.append(row);
+        });
+        if (!list.childElementCount) {
+          const leer = document.createElement("div");
+          leer.style.cssText = "padding:10px;opacity:.6;font-size:13px;";
+          leer.textContent = "Keine Treffer.";
+          list.append(leer);
+        }
+      };
+      inp.addEventListener("input", render);
+      ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+      document.addEventListener("keydown", esc);
+      box.append(inp, list);
+      ov.append(box);
+      document.body.append(ov);
+      setTimeout(() => inp.focus(), 50);
+      render();
+    }
+  }
+  customElements.define("controlos-entity-picker", ControlosEntityPicker);
+}
+function epick(entity, name) {
+  return { type: "custom:controlos-entity-picker", entity, name };
+}
+
 /* Graph-Popup: grosser Graph im Dashboard-Design mit live umschaltbarer
    Zeitachse (Zeitraum-Select + sichtbarkeitsgesteuerte Varianten). */
 const GRAPH_RANGES = [["1 h", 1, 60], ["6 h", 6, 30], ["12 h", 12, 12],
@@ -897,7 +1014,7 @@ function lichtView(a) {
         // Undercanopy-Dimmung: gehoert zu den Licht-Einstellungen
         V(sep("Undercanopy dimmen", "mdi:lightbulb-group"), dvUc),
         V(bsw(wp + "dimmbar_undercanopy", "Undercanopy dimmbar?", "mdi:brightness-6"), dvUc),
-        V(bsel(sp + "dimmer_undercanopy", "Dimmer: Undercanopy"), duc),
+        V(epick(sp + "dimmer_undercanopy", "Dimmer: Undercanopy"), duc),
       ] },
       { type: "grid", cards: [
         // Schaltmodus (Master) nur, wenn Sonnenaufgang ueberhaupt moeglich ist
@@ -942,7 +1059,7 @@ function geraeteView(a) {
       ] },
       { type: "grid", cards: [
         sep("Geräte-Zuordnung", "mdi:power-plug"),
-        ...SEL_GERAET.map((k) => Object.assign(bsel(sp + k, null),
+        ...SEL_GERAET.map((k) => Object.assign(epick(sp + k, null),
           { visibility: [{ condition: "state",
             entity: wp + "vorhanden_" + k.replace("geraet_", "").replace("co2_ventil", "co2"),
             state: "on" }] })),
@@ -952,20 +1069,28 @@ function geraeteView(a) {
         ...DIMMBAR_UI.map((d) => Object.assign(bsw(wp + "dimmbar_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "vorhanden_" + d, state: "on" }] })),
-        sep("Dual-Geräte (können Gegenteil)", "mdi:swap-horizontal"),
-        bsw(wp + "dual_befeuchter", null),
-        bsw(wp + "dual_entfeuchter", null),
+        sep("Hysterese (Einzelgerät)", "mdi:arrow-collapse-vertical"),
+        { type: "markdown", content:
+          "**An** = am Ziel abschalten (halbe Hysterese). **Aus** = volle " +
+          "Hysterese bis zur Bandkante (für träge Geräte). Bei Be- **und** " +
+          "Entfeuchter automatisch eng." },
+        Object.assign(bsw(wp + "dual_befeuchter", null),
+          { visibility: [{ condition: "state",
+            entity: wp + "vorhanden_befeuchter", state: "on" }] }),
+        Object.assign(bsw(wp + "dual_entfeuchter", null),
+          { visibility: [{ condition: "state",
+            entity: wp + "vorhanden_entfeuchter", state: "on" }] }),
       ] },
       { type: "grid", cards: [
         sep("Dimmer-Zuordnung", "mdi:tune-vertical"),
-        ...DIMMBAR_UI.map((d) => Object.assign(bsel(sp + "dimmer_" + d, null),
+        ...DIMMBAR_UI.map((d) => Object.assign(epick(sp + "dimmer_" + d, null),
           { visibility: [{ condition: "state",
             entity: wp + "dimmbar_" + d, state: "on" }] })),
         sep("Sensoren (Quellen)", "mdi:access-point"),
-        ...SEL_SENSOR.map((k) => bsel(sp + k, null)),
-        bsel(sp + "sensor_entfeuchter", "Geräte-Feuchtesensor (Entfeuchter)"),
-        bsel(sp + "sensor_tank", "Tank-Sensor (voll)"),
-        bsel(sp + "stufe_entfeuchter", "Lüfterstufe Entfeuchter"),
+        ...SEL_SENSOR.map((k) => epick(sp + k, null)),
+        epick(sp + "sensor_entfeuchter", "Geräte-Feuchtesensor (Entfeuchter)"),
+        epick(sp + "sensor_tank", "Tank-Sensor (voll)"),
+        epick(sp + "stufe_entfeuchter", "Lüfterstufe Entfeuchter"),
       ] },
     ] };
 }
