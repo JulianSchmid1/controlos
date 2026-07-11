@@ -798,6 +798,11 @@ function kalenderView(a) {
             { entity: "date.controlos_" + s + "_bluete_start", name: "Blüte-Start" }] },
             photoOnly),
           bbtn(bp + "grow_neu", "Neuen Grow / Batch starten", "mdi:sprout"),
+          // Nur bei aktivem Grow: archivieren + "leer" weitersteuern
+          Object.assign(bbtn(bp + "grow_beenden",
+            "Grow beenden (leer weiterlaufen)", "mdi:stop-circle-outline"),
+            { visibility: [{ condition: "state",
+              entity: G + "grow_tag", state_not: "unknown" }] }),
           sep("Strains / Pflanzen", "mdi:cannabis"),
           { type: "entities", entities: [
             { entity: "text.controlos_" + s + "_strain_name", name: "Sorte / Name" },
@@ -810,6 +815,7 @@ function kalenderView(a) {
           { type: "markdown", content: strainList },
           { type: "entities", entities: [
             { entity: sp + "strain_auswahl", name: "Auswählen" }] },
+          bbtn(bp + "strain_ernten", "Gewählten Strain ernten", "mdi:content-cut"),
           bbtn(bp + "strain_remove", "Gewählten entfernen", "mdi:minus-circle"),
           sep("Archiv (abgeschlossen)", "mdi:archive"),
           { type: "markdown", content: archiv },
