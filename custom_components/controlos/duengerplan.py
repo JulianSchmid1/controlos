@@ -104,6 +104,8 @@ def _plan_termine(plan: dict, p: dict, eintrag: dict, strain_start, ernte,
 def termine_fuer_strain(produkte: list, st: dict, autoflower: bool,
                         bluete_start: date | None,
                         von: date, bis: date) -> list[dict]:
+    if st.get("geerntet"):
+        return []   # geerntete Strains brauchen keine Anwendungen mehr
     try:
         strain_start = date.fromisoformat(
             st.get("start") or st.get("added") or "")

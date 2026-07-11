@@ -111,6 +111,8 @@ BUTTON_PARAMS = {
     "strain_add":    {"name": "Strain hinzufügen",         "icon": "mdi:plus-circle"},
     "strain_remove": {"name": "Gewählten Strain entfernen", "icon": "mdi:minus-circle"},
     "grow_neu":      {"name": "Neuen Grow starten",         "icon": "mdi:sprout"},
+    "grow_beenden":  {"name": "Grow beenden (leer weiterlaufen)", "icon": "mdi:stop-circle-outline"},
+    "strain_ernten": {"name": "Gewählten Strain ernten",    "icon": "mdi:content-cut"},
     "benachrichtigung_add":    {"name": "Zielgerät hinzufügen",         "icon": "mdi:cellphone-check"},
     "benachrichtigung_remove": {"name": "Gewähltes Zielgerät entfernen", "icon": "mdi:cellphone-remove"},
     "notiz_anlegen": {"name": "Notiz hinzufügen", "icon": "mdi:note-plus"},

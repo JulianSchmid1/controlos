@@ -48,6 +48,10 @@ class ControlosButton(ButtonEntity):
             await coord.async_strain_remove()
         elif self._key == "grow_neu":
             await coord.async_grow_neu()
+        elif self._key == "grow_beenden":
+            await coord.async_grow_beenden()
+        elif self._key == "strain_ernten":
+            await coord.async_strain_ernten()
         elif self._key == "benachrichtigung_add":
             await coord.async_notify_add()
         elif self._key == "benachrichtigung_remove":

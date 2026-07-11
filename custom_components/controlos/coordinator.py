@@ -1117,6 +1117,47 @@ class ControlosCoordinator(DataUpdateCoordinator):
             sel.refresh_options()
         await self.async_request_refresh()
 
+    async def async_grow_beenden(self) -> None:
+        """Laufenden Grow archivieren und OHNE neuen Grow weiterlaufen
+        (Klima laeuft "leer" weiter, keine Grow-Dokumentation)."""
+        store = self._store()
+        ents = self._ents()
+        if store is None:
+            return
+        ctx = _Ctx(self.hass, ents)
+        gstart_e = ents.get("grow_start")
+        old_start = getattr(gstart_e, "native_value", None)
+        if not isinstance(old_start, date):
+            return  # kein aktiver Grow
+        store.archive_grow(self.entry.entry_id, {
+            "name": (getattr(ents.get("grow_name"), "native_value", "")
+                     or "Grow"),
+            "grow_typ": ctx.sel_raw("grow_typ") or "Photoperiodisch",
+            "start": old_start.isoformat(),
+            "ende": date.today().isoformat(),
+            "strains": store.strains(self.entry.entry_id),
+        })
+        gstart_e.set_internal(None)
+        be = ents.get("bluete_start")
+        if be is not None:
+            be.set_internal(None)
+        sel = ents.get("strain_auswahl")
+        if sel is not None:
+            sel.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_strain_ernten(self) -> None:
+        """Gewaehlten Strain als geerntet markieren (Kalender-Eintrag,
+        Terminserien enden; Strain bleibt dokumentiert)."""
+        store = self._store()
+        ents = self._ents()
+        sel = ents.get("strain_auswahl")
+        idx = sel.selected_index() if sel is not None else -1
+        if store is None or idx < 0:
+            return
+        store.strain_ernten(self.entry.entry_id, idx)
+        await self.async_request_refresh()
+
     async def async_grow_neu(self) -> None:
         """Laufenden Grow archivieren + frischen Grow starten (Start = heute)."""
         store = self._store()

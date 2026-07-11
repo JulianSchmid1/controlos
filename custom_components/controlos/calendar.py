@@ -101,6 +101,13 @@ class ControlosCalendar(CalendarEntity):
                           _as_date(getattr(self._ents().get("bluete_start"),
                                            "native_value", None)))
                 for st in store.strains(self._entry.entry_id):
+                    ge = _as_date(st.get("geerntet"))
+                    if ge is not None:   # echtes Ernte-Datum statt Schaetzung
+                        evs.append(CalendarEvent(
+                            start=ge, end=ge + timedelta(days=1),
+                            summary="🌾 Geerntet: %s" % (st.get("name")
+                                                         or "?")))
+                        continue
                     tage = _strain_tage(st)
                     if tage is None:
                         continue
@@ -151,7 +158,9 @@ class ControlosCalendar(CalendarEntity):
                     start = _as_date(st.get("start") or st.get("added"))
                     if start is None:
                         continue
-                    end = heute if heute > start else start
+                    end = _as_date(st.get("geerntet")) or heute
+                    if end < start:
+                        end = start
                     evs.append(CalendarEvent(
                         start=start, end=end + timedelta(days=1),
                         summary="%s %s" % (icon, st.get("name") or "?")))

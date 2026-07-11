@@ -181,6 +181,13 @@ class ControlosStore:
                 lst.remove(pid)
             self._save()
 
+    def strain_ernten(self, entry_id: str, strain_idx: int) -> None:
+        """Einzelnen Strain als geerntet markieren (Datum = heute)."""
+        strains = self.grow(entry_id).get("strains") or []
+        if 0 <= strain_idx < len(strains):
+            strains[strain_idx]["geerntet"] = date.today().isoformat()
+            self._save()
+
     def hersteller_link(self, entry_id: str, strain_idx: int, hersteller: str,
                         verbinden: bool) -> None:
         """Hersteller-Methode: alle Produkte dieses Herstellers gelten fuer
