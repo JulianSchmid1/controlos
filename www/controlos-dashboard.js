@@ -118,6 +118,14 @@ function bbtn(entity, name, icon) {
     tap_action: { action: "call-service", service: "button.press",
       target: { entity_id: entity } } });
 }
+function bnav(name, icon, path) {
+  // Bubble-Nav-Karte, KOMPLETT klickbar: tap_action deckt das Icon ab,
+  // button_action die restliche Kartenflaeche.
+  const act = { action: "navigate", navigation_path: path };
+  return applyDesign({ type: "custom:bubble-card", card_type: "button",
+    button_type: "name", name, icon, card_layout: "large",
+    tap_action: act, button_action: { tap_action: act } });
+}
 function mg(name, decimals, entities, extra) {
   return Object.assign({ type: "custom:mini-graph-card", name, hours_to_show: 24,
     points_per_hour: 6, line_width: 2, decimals, height: 100, hour24: true,
@@ -478,12 +486,8 @@ function monitorView(a, hass) {
           }
           return { type: "entities", entities: rows };
         })(),
-        { type: "custom:mushroom-template-card",
-          icon: "mdi:calendar-text", icon_color: "teal",
-          primary: "Grow-Kalender öffnen",
-          secondary: "Phasen-Tagebuch, Notizen & Erinnerungen",
-          tap_action: { action: "navigate",
-            navigation_path: "/" + DASH + "/grow-kalender-" + s } },
+        bnav("Grow-Kalender öffnen", "mdi:calendar-text",
+          "/" + DASH + "/grow-kalender-" + s),
         sep("KI-Prognose", "mdi:brain"),
         // Prognose-Chart: Ist-VPD (Historie) + KI-Vorhersage in die Zukunft
         (() => {
@@ -782,11 +786,8 @@ function kalenderView(a) {
           { condition: "state", entity: sp + "grow_typ", state: "Photoperiodisch" }] };
         return { type: "grid", cards: [
           sep("Grow-Verwaltung", "mdi:sprout"),
-          { type: "custom:mushroom-template-card", icon: "mdi:bottle-tonic",
-            icon_color: "green", primary: "Pflanzenpflege öffnen",
-            secondary: "Dünger, Pflanzenschutz, Nützlinge & Termine",
-            tap_action: { action: "navigate",
-              navigation_path: "/" + DASH + "/bereich-" + s + "-duenger" } },
+          bnav("Pflanzenpflege öffnen", "mdi:bottle-tonic",
+            "/" + DASH + "/bereich-" + s + "-duenger"),
           { type: "entities", entities: [
             { entity: "text.controlos_" + s + "_grow_name", name: "Grow-Name" },
             { entity: sp + "zelt_typ", name: "Zelt-Typ" },
@@ -863,11 +864,8 @@ function configView(a) {
         Object.assign(bsel(sp + "grow_typ", "Grow-Typ (Photoperiodisch/Autoflowering)"),
           { visibility: [{ condition: "state", entity: sp + "zelt_typ", state: "Growzelt" }] }),
         bsel(sp + "wuchsphase", "Aktuelle Phase (Steuerung)"),
-        { type: "custom:mushroom-template-card", icon: "mdi:calendar-text",
-          icon_color: "teal", primary: "Grow-Kalender öffnen",
-          secondary: "Phasen-Tagebuch, Notizen & Erinnerungen",
-          tap_action: { action: "navigate",
-            navigation_path: "/" + DASH + "/grow-kalender-" + s } },
+        bnav("Grow-Kalender öffnen", "mdi:calendar-text",
+          "/" + DASH + "/grow-kalender-" + s),
         { type: "markdown", content:
           "Grow benennen, Strains & Ernten verwaltest du auf der Seite " +
           "**Grow-Kalender**; Phasen-Profile bearbeiten unter **Klima-Regelung**." },
