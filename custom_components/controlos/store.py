@@ -165,8 +165,11 @@ class ControlosStore:
                 lst.remove(pid)
             self._save()
 
-    def duenger_erinnert(self, key: str) -> str | None:
+    def duenger_erinnert(self, key: str):
         return self.data["duenger"].setdefault("erinnert", {}).get(key)
+
+    def duenger_erinnert_alle(self) -> dict:
+        return dict(self.data["duenger"].setdefault("erinnert", {}))
 
     def set_duenger_erinnert(self, key: str, datum: str) -> None:
         e = self.data["duenger"].setdefault("erinnert", {})

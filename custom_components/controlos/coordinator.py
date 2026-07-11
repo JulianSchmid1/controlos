@@ -744,21 +744,92 @@ class ControlosCoordinator(DataUpdateCoordinator):
             if geaendert:
                 store.set_todos(self.entry.entry_id, items)
 
-        # Duengeplan: heute faellige Anwendungen (je Produkt+Strain+Tag genau
-        # eine Meldung; Merker im Store ueberlebt Neustarts)
-        if store and ctx.sw("notify_duenger"):
-            for t in data.get("_duenger_heute") or []:
-                key = "dg|%s|%s|%s" % (t["pid"], t["strain"], t["datum"])
-                if store.duenger_erinnert(key) == t["datum"]:
-                    continue
+        # Pflanzenpflege: faellige Anwendungen -> abhakbarer Eintrag in der
+        # Notizliste + Push. Je Produkt: einmalige Meldung ODER Wiederholung
+        # alle X Stunden/Tage, bis der Eintrag abgehakt ist.
+        if store:
+            produkte_map = {p.get("id"): p
+                            for p in store.duenger_produkte()}
+            todos2 = store.todos(self.entry.entry_id)
+            todos_neu = False
+            jetzt_dt = dt_util.now()
+
+            async def _pflege_push(key, t, zusatz=""):
                 icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
                 await melde(
                     key, "%s ControlOS: %s anwenden" % (icon, t["produkt"]),
-                    "[%s] Heute fällig: %s (%s) für %s." % (
-                        name, t["produkt"], t.get("typ") or t["kategorie"],
-                        t["strain"]),
+                    "[%s] Fällig: %s (%s) für %s.%s" % (
+                        name, t["produkt"],
+                        t.get("typ") or t["kategorie"], t["strain"], zusatz),
                     cooldown=0)
-                store.set_duenger_erinnert(key, t["datum"])
+
+            # 1) Heute faellige Termine: Notiz-Eintrag anlegen + erste Meldung
+            for t in data.get("_duenger_heute") or []:
+                key = "dg|%s|%s|%s" % (t["pid"], t["strain"], t["datum"])
+                merk = store.duenger_erinnert(key)
+                if isinstance(merk, str):   # Altformat: nur Datum gemerkt
+                    merk = {"gemeldet": merk}
+                merk = dict(merk or {})
+                if not merk.get("uid"):
+                    uid = _uuid.uuid4().hex
+                    icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
+                    # !stumm: die Notiz-Engine soll nicht doppelt melden,
+                    # die Pflege-Erinnerung uebernimmt das selbst.
+                    todos2.append({
+                        "uid": uid,
+                        "summary": "%s %s – %s" % (icon, t["produkt"],
+                                                   t["strain"]),
+                        "status": "needs_action", "due": t["datum"],
+                        "description": "%s · Pflanzenpflege !stumm" % (
+                            t.get("typ") or t["kategorie"])})
+                    todos_neu = True
+                    merk["uid"] = uid
+                    merk["pid"] = t["pid"]
+                    merk["strain"] = t["strain"]
+                    merk["kategorie"] = t["kategorie"]
+                    merk["typ"] = t.get("typ")
+                    merk["produkt"] = t["produkt"]
+                if ctx.sw("notify_duenger") and not merk.get("gemeldet"):
+                    await _pflege_push(key, t)
+                    merk["gemeldet"] = jetzt_dt.isoformat()
+                store.set_duenger_erinnert(key, merk)
+
+            if todos_neu:
+                store.set_todos(self.entry.entry_id, todos2)
+                todo_ent = self._ents().get("notizen")
+                if todo_ent is not None:
+                    todo_ent.async_write_ha_state()
+
+            # 2) Intervall-Erinnerungen: offene Pflege-Eintraege wiederholt
+            #    melden, bis sie abgehakt (oder geloescht) sind
+            if ctx.sw("notify_duenger"):
+                offen = {x.get("uid"): x for x in todos2
+                         if x.get("status") != "completed"}
+                for key, merk in store.duenger_erinnert_alle().items():
+                    if not (isinstance(merk, dict) and merk.get("uid")):
+                        continue
+                    p = produkte_map.get(merk.get("pid"))
+                    if not p or p.get("erinnerung") != "Intervall":
+                        continue
+                    if merk["uid"] not in offen:
+                        continue   # abgehakt/geloescht -> Ruhe
+                    step_h = max(1, int(p.get("erinnerung_intervall", 4))) * (
+                        24 if p.get("erinnerung_einheit") == "Tage" else 1)
+                    letzte = merk.get("gemeldet")
+                    try:
+                        wieder = (letzte is None or
+                                  (jetzt_dt - datetime.fromisoformat(letzte))
+                                  .total_seconds() >= step_h * 3600)
+                    except (TypeError, ValueError):
+                        wieder = True
+                    if wieder:
+                        t = {"produkt": merk.get("produkt", "?"),
+                             "strain": merk.get("strain", "?"),
+                             "kategorie": merk.get("kategorie", "Dünger"),
+                             "typ": merk.get("typ")}
+                        await _pflege_push(key, t, " (bis abgehakt)")
+                        merk = dict(merk, gemeldet=jetzt_dt.isoformat())
+                        store.set_duenger_erinnert(key, merk)
 
     # ------------------------------------------------------------------
     async def _ki_tick(self, ctx, data) -> None:
@@ -1152,7 +1223,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
              "typ": ctx.sel_raw("duenger_typ") or "",
              "modus": modus, "einheit": einheit, "phase": phase,
              "punkte": [],
-             "intervall": int(ctx.num("duenger_intervall", 7))}
+             "intervall": int(ctx.num("duenger_intervall", 7)),
+             "erinnerung": ("Intervall" if (ctx.sel_raw(
+                 "duenger_erinnerung_modus") or "").startswith("Intervall")
+                 else "Einmalig"),
+             "erinnerung_intervall": int(
+                 ctx.num("duenger_erinnerung_intervall", 4)),
+             "erinnerung_einheit": ctx.sel_raw(
+                 "duenger_erinnerung_einheit") or "Stunden"}
         if modus == "Einmalig":
             p["punkte"].append({"wert": int(ctx.num("duenger_zeitpunkt", 1)),
                                 "einheit": einheit, "phase": phase})

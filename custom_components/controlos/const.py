@@ -22,7 +22,9 @@ TEXT_PARAMS = {
 # Duengeplan: Typen je Kategorie
 DUENGER_TYPEN = {
     "Dünger": ["Wachstum", "Blüte", "CalMag", "Wurzelstimulator", "Enzyme",
-               "Mikroorganismen/Tee", "PK-Booster", "Sonstiges"],
+               "Mikroorganismen/Tee", "PK-Booster",
+               "Bodenhilfsstoff (Amendment)", "NPK-Flüssigdünger",
+               "Bodenaktivator", "Sonstiges"],
     "Pflanzenschutzmittel": ["Insektizid", "Fungizid"],
     "Nützlinge": [
         "SF-Nematoden (Steinernema feltiae)",
@@ -159,6 +161,7 @@ NUMBER_PARAMS = {
     # -- Duengeplan --
     "duenger_zeitpunkt": {"name": "Zeitpunkt (Tag/Woche Nr.)", "min": 1, "max": 150, "step": 1, "unit": "", "icon": "mdi:calendar-cursor", "default": 1},
     "duenger_intervall": {"name": "Wiederholen alle", "min": 1, "max": 60, "step": 1, "unit": "", "icon": "mdi:repeat", "default": 7},
+    "duenger_erinnerung_intervall": {"name": "Erinnern alle", "min": 1, "max": 48, "step": 1, "unit": "", "icon": "mdi:bell-ring", "default": 4},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
     "vpd_bias_tag":   {"name": "VPD-Bias Tag",   "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
     "vpd_bias_nacht": {"name": "VPD-Bias Nacht", "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
@@ -278,6 +281,8 @@ SELECT_PARAMS = {
     "duenger_plan_modus": {"name": "Anwendung", "icon": "mdi:repeat", "options": ["Einmalig", "Wiederholend"], "default": "Einmalig"},
     "duenger_zeiteinheit": {"name": "Zeiteinheit", "icon": "mdi:calendar-clock", "options": ["Tage", "Wochen"], "default": "Wochen"},
     "duenger_phase":      {"name": "Phase", "icon": "mdi:sprout", "options": ["Ganzer Grow", "Vegetation", "Blüte"], "default": "Ganzer Grow"},
+    "duenger_erinnerung_modus": {"name": "Erinnerung (Push)", "icon": "mdi:bell-ring", "options": ["Einmalige Push-Nachricht", "Intervall bis abgehakt"], "default": "Einmalige Push-Nachricht"},
+    "duenger_erinnerung_einheit": {"name": "Erinnerungs-Einheit", "icon": "mdi:timer-sand", "options": ["Stunden", "Tage"], "default": "Stunden"},
     # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
     "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
     "feuchte_alarm_modus": {"name": "Feuchte-Alarmart", "icon": "mdi:water-alert",       "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},

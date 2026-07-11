@@ -1237,6 +1237,12 @@ function duengerView(a) {
           cEq(sp + "duenger_plan_modus", "Einmalig")),
         V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
+        // Push-Verhalten am Anwendungstag: einmalig oder bis abgehakt
+        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
+        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
         bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
       ] },
       { type: "grid", cards: [
