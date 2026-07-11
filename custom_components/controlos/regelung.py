@@ -183,7 +183,11 @@ class Regler:
         if tank_voll or vpd is None:
             return vb   # Rechnen gestoppt, eingefrorener Wert gilt weiter
         e = vpd_ziel - vpd
-        if not temp_lever and ((e > 0 and not ent_da) or (e < 0 and not bef_da)):
+        # e<0 (VPD zu hoch): auch OHNE Befeuchter lernbar, wenn ein
+        # Entfeuchter da ist - der negative Bias senkt den Korridor und
+        # laesst den Entfeuchter seltener laufen (weniger Trocknen).
+        if not temp_lever and ((e > 0 and not ent_da)
+                               or (e < 0 and not (bef_da or ent_da))):
             # Aktor fehlt strukturell (kein Be-/Entfeuchter fuer diese Richtung)
             # und keine VPD->Temp-Kopplung -> Windup abbauen statt integrieren.
             vb = dec(vb, 0.01, 3)
