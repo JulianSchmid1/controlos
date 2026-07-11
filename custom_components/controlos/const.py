@@ -23,7 +23,7 @@ TEXT_PARAMS = {
 DUENGER_TYPEN = {
     "Dünger": ["Wachstum", "Blüte", "CalMag", "Wurzelstimulator", "Enzyme",
                "Mikroorganismen/Tee", "PK-Booster",
-               "Bodenhilfsstoff (Amendment)", "NPK-Flüssigdünger",
+               "Bodenhilfsstoff (Amendment)", "NPK-Dünger",
                "Bodenaktivator", "Sonstiges"],
     "Pflanzenschutzmittel": ["Insektizid", "Fungizid"],
     "Nützlinge": [
@@ -119,6 +119,10 @@ BUTTON_PARAMS = {
     "duenger_entfernen": {"name": "Gewähltes Produkt entfernen", "icon": "mdi:minus-circle"},
     "duenger_link":      {"name": "Mit Strain verknüpfen",       "icon": "mdi:link-variant"},
     "duenger_unlink":    {"name": "Verknüpfung trennen",         "icon": "mdi:link-variant-off"},
+    "duenger_h_link":    {"name": "Hersteller-Methode verknüpfen", "icon": "mdi:factory"},
+    "duenger_h_unlink":  {"name": "Hersteller-Methode trennen",    "icon": "mdi:link-variant-off"},
+    "duenger_extra_add":    {"name": "Extra-Regel für Strain anlegen", "icon": "mdi:star-plus"},
+    "duenger_extra_remove": {"name": "Gewählte Extra-Regel entfernen", "icon": "mdi:star-minus"},
 }
 
 # ---------------------------------------------------------------------------
@@ -162,6 +166,7 @@ NUMBER_PARAMS = {
     "duenger_zeitpunkt": {"name": "Zeitpunkt (Tag/Woche Nr.)", "min": 1, "max": 150, "step": 1, "unit": "", "icon": "mdi:calendar-cursor", "default": 1},
     "duenger_intervall": {"name": "Wiederholen alle", "min": 1, "max": 60, "step": 1, "unit": "", "icon": "mdi:repeat", "default": 7},
     "duenger_erinnerung_intervall": {"name": "Erinnern alle", "min": 1, "max": 48, "step": 1, "unit": "", "icon": "mdi:bell-ring", "default": 4},
+    "duenger_menge": {"name": "Menge je Anwendung", "min": 0, "max": 1000, "step": 0.5, "unit": "", "icon": "mdi:beaker", "default": 0},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
     "vpd_bias_tag":   {"name": "VPD-Bias Tag",   "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
     "vpd_bias_nacht": {"name": "VPD-Bias Nacht", "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
@@ -282,6 +287,8 @@ SELECT_PARAMS = {
     "duenger_zeiteinheit": {"name": "Zeiteinheit", "icon": "mdi:calendar-clock", "options": ["Tage", "Wochen"], "default": "Wochen"},
     "duenger_phase":      {"name": "Phase", "icon": "mdi:sprout", "options": ["Ganzer Grow", "Vegetation", "Blüte"], "default": "Ganzer Grow"},
     "duenger_erinnerung_modus": {"name": "Erinnerung (Push)", "icon": "mdi:bell-ring", "options": ["Einmalige Push-Nachricht", "Intervall bis abgehakt"], "default": "Einmalige Push-Nachricht"},
+    "duenger_form": {"name": "Form", "icon": "mdi:water", "options": ["Flüssig (ml/L)", "Trocken (g/kg)"], "default": "Flüssig (ml/L)"},
+    "duenger_extra_art": {"name": "Extra-Regel wirkt", "icon": "mdi:star-cog", "options": ["Zusätzlich zum Plan", "Ersetzt den Plan (individuell)"], "default": "Zusätzlich zum Plan"},
     "duenger_erinnerung_einheit": {"name": "Erinnerungs-Einheit", "icon": "mdi:timer-sand", "options": ["Stunden", "Tage"], "default": "Stunden"},
     # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
     "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},

@@ -23,7 +23,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
-from .duengerplan import KATEGORIE_ICON, alle_termine
+from .duengerplan import KATEGORIE_ICON, alle_termine, menge_txt
 from .entity_base import area_slug
 from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
@@ -454,24 +454,34 @@ class ControlosCoordinator(DataUpdateCoordinator):
             bstart_d = _bs if isinstance(_bs, date) else None
             termine = alle_termine(produkte, data["_strains"], autoflower,
                                    bstart_d, today, today + timedelta(days=90))
+            def _gilt(p, s):
+                return (p.get("id") in (s.get("duenger") or [])
+                        or (p.get("hersteller") or "").lower() in
+                        [h.lower() for h in (s.get("hersteller_links") or [])])
+
             data["_duengerplan"] = [
                 {"name": p.get("name"), "hersteller": p.get("hersteller"),
                  "kategorie": p.get("kategorie"), "typ": p.get("typ"),
                  "modus": p.get("modus"), "einheit": p.get("einheit"),
                  "phase": p.get("phase"), "intervall": p.get("intervall"),
-                 "punkte": p.get("punkte") or [],
+                 "form": p.get("form", "Flüssig"),
+                 "menge": menge_txt(p.get("menge"), p.get("form", "Flüssig")),
+                 "punkte": [dict(pt, menge_txt=menge_txt(
+                     pt.get("menge"), p.get("form", "Flüssig")))
+                     for pt in (p.get("punkte") or [])],
                  "strains": [s.get("name") for s in data["_strains"]
-                             if p.get("id") in (s.get("duenger") or [])]}
+                             if _gilt(p, s)]}
                 for p in produkte]
             data["_duenger_termine"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": t["strain"], "kategorie": t["kategorie"],
-                 "typ": t["typ"]}
+                 "typ": t["typ"], "menge": t.get("menge") or ""}
                 for t in termine[:40]]
             data["_duenger_heute"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": t["strain"], "kategorie": t["kategorie"],
-                 "typ": t["typ"], "pid": t["pid"]}
+                 "typ": t["typ"], "pid": t["pid"],
+                 "menge": t.get("menge") or ""}
                 for t in termine if t["datum"] == today]
 
             # -- Bluetetage (je Grow-Typ) --
@@ -754,12 +764,16 @@ class ControlosCoordinator(DataUpdateCoordinator):
             todos_neu = False
             jetzt_dt = dt_util.now()
 
+            def _mit_menge(t):
+                m = t.get("menge") or ""
+                return t["produkt"] + ((" " + m) if m else "")
+
             async def _pflege_push(key, t, zusatz=""):
                 icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
                 await melde(
-                    key, "%s ControlOS: %s anwenden" % (icon, t["produkt"]),
+                    key, "%s ControlOS: %s anwenden" % (icon, _mit_menge(t)),
                     "[%s] Fällig: %s (%s) für %s.%s" % (
-                        name, t["produkt"],
+                        name, _mit_menge(t),
                         t.get("typ") or t["kategorie"], t["strain"], zusatz),
                     cooldown=0)
 
@@ -777,7 +791,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     # die Pflege-Erinnerung uebernimmt das selbst.
                     todos2.append({
                         "uid": uid,
-                        "summary": "%s %s – %s" % (icon, t["produkt"],
+                        "summary": "%s %s – %s" % (icon, _mit_menge(t),
                                                    t["strain"]),
                         "status": "needs_action", "due": t["datum"],
                         "description": "%s · Pflanzenpflege !stumm" % (
@@ -789,6 +803,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     merk["kategorie"] = t["kategorie"]
                     merk["typ"] = t.get("typ")
                     merk["produkt"] = t["produkt"]
+                    merk["menge"] = t.get("menge") or ""
                 if ctx.sw("notify_duenger") and not merk.get("gemeldet"):
                     await _pflege_push(key, t)
                     merk["gemeldet"] = jetzt_dt.isoformat()
@@ -826,7 +841,8 @@ class ControlosCoordinator(DataUpdateCoordinator):
                         t = {"produkt": merk.get("produkt", "?"),
                              "strain": merk.get("strain", "?"),
                              "kategorie": merk.get("kategorie", "Dünger"),
-                             "typ": merk.get("typ")}
+                             "typ": merk.get("typ"),
+                             "menge": merk.get("menge", "")}
                         await _pflege_push(key, t, " (bis abgehakt)")
                         merk = dict(merk, gemeldet=jetzt_dt.isoformat())
                         store.set_duenger_erinnert(key, merk)
@@ -1230,10 +1246,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
              "erinnerung_intervall": int(
                  ctx.num("duenger_erinnerung_intervall", 4)),
              "erinnerung_einheit": ctx.sel_raw(
-                 "duenger_erinnerung_einheit") or "Stunden"}
+                 "duenger_erinnerung_einheit") or "Stunden",
+             "form": ("Trocken" if (ctx.sel_raw("duenger_form") or "")
+                      .startswith("Trocken") else "Flüssig"),
+             "menge": ctx.num("duenger_menge", 0)}
         if modus == "Einmalig":
             p["punkte"].append({"wert": int(ctx.num("duenger_zeitpunkt", 1)),
-                                "einheit": einheit, "phase": phase})
+                                "einheit": einheit, "phase": phase,
+                                "menge": ctx.num("duenger_menge", 0)})
         store.add_duenger_produkt(p)
         sel = ents.get("duenger_produkt")
         if sel is not None:
@@ -1254,7 +1274,8 @@ class ControlosCoordinator(DataUpdateCoordinator):
         store.add_duenger_punkt(pid, {
             "wert": int(ctx.num("duenger_zeitpunkt", 1)),
             "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
-            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow"})
+            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
+            "menge": ctx.num("duenger_menge", 0)})
         await self.async_request_refresh()
 
     async def async_duenger_entfernen(self) -> None:
@@ -1279,4 +1300,57 @@ class ControlosCoordinator(DataUpdateCoordinator):
         if store is None or not pid or idx < 0:
             return
         store.duenger_link(self.entry.entry_id, idx, pid, verbinden)
+        await self.async_request_refresh()
+
+    async def async_duenger_hersteller_link(self, verbinden: bool) -> None:
+        """Hersteller-Methode: alle Produkte des Herstellers fuer den Strain."""
+        store = self._store()
+        ents = self._ents()
+        hsel = ents.get("duenger_hersteller_sel")
+        ssel = ents.get("duenger_strain")
+        h = getattr(hsel, "current_option", None)
+        idx = ssel.selected_index() if ssel is not None else -1
+        if store is None or not h or h == "—" or idx < 0:
+            return
+        store.hersteller_link(self.entry.entry_id, idx, h, verbinden)
+        await self.async_request_refresh()
+
+    async def async_duenger_extra_add(self) -> None:
+        """Strain-spezifische Extra-Regel: gewaehltes Produkt + aktuelles
+        Formular (Plan + Menge), gilt additiv NUR fuer diesen Strain."""
+        store = self._store()
+        ents = self._ents()
+        ctx = _Ctx(self.hass, ents)
+        psel = ents.get("duenger_produkt")
+        ssel = ents.get("duenger_strain")
+        pid = psel.selected_id() if psel is not None else None
+        idx = ssel.selected_index() if ssel is not None else -1
+        if store is None or not pid or idx < 0:
+            return
+        store.strain_extra_add(self.entry.entry_id, idx, {
+            "pid": pid,
+            "modus": ctx.sel_raw("duenger_plan_modus") or "Einmalig",
+            "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
+            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
+            "wert": int(ctx.num("duenger_zeitpunkt", 1)),
+            "intervall": int(ctx.num("duenger_intervall", 7)),
+            "menge": ctx.num("duenger_menge", 0),
+            "art": ("ersetzt" if (ctx.sel_raw("duenger_extra_art") or "")
+                    .startswith("Ersetzt") else "zusaetzlich")})
+        esel = ents.get("duenger_extra_sel")
+        if esel is not None:
+            esel.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_duenger_extra_remove(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        ssel = ents.get("duenger_strain")
+        esel = ents.get("duenger_extra_sel")
+        sidx = ssel.selected_index() if ssel is not None else -1
+        eidx = esel.selected_index() if esel is not None else -1
+        if store is None or sidx < 0 or eidx < 0:
+            return
+        store.strain_extra_remove(self.entry.entry_id, sidx, eidx)
+        esel.refresh_options()
         await self.async_request_refresh()

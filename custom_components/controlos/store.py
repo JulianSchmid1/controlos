@@ -165,6 +165,35 @@ class ControlosStore:
                 lst.remove(pid)
             self._save()
 
+    def hersteller_link(self, entry_id: str, strain_idx: int, hersteller: str,
+                        verbinden: bool) -> None:
+        """Hersteller-Methode: alle Produkte dieses Herstellers gelten fuer
+        den Strain (Extra-Regeln kommen additiv dazu)."""
+        strains = self.grow(entry_id).get("strains") or []
+        if 0 <= strain_idx < len(strains) and hersteller:
+            lst = strains[strain_idx].setdefault("hersteller_links", [])
+            if verbinden and hersteller not in lst:
+                lst.append(hersteller)
+            elif not verbinden and hersteller in lst:
+                lst.remove(hersteller)
+            self._save()
+
+    def strain_extra_add(self, entry_id: str, strain_idx: int,
+                         regel: dict) -> None:
+        strains = self.grow(entry_id).get("strains") or []
+        if 0 <= strain_idx < len(strains):
+            strains[strain_idx].setdefault("extra_regeln", []).append(regel)
+            self._save()
+
+    def strain_extra_remove(self, entry_id: str, strain_idx: int,
+                            regel_idx: int) -> None:
+        strains = self.grow(entry_id).get("strains") or []
+        if 0 <= strain_idx < len(strains):
+            regeln = strains[strain_idx].get("extra_regeln") or []
+            if 0 <= regel_idx < len(regeln):
+                regeln.pop(regel_idx)
+                self._save()
+
     def duenger_erinnert(self, key: str):
         return self.data["duenger"].setdefault("erinnert", {}).get(key)
 

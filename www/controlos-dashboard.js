@@ -1199,9 +1199,10 @@ function duengerView(a) {
     "- **{{ p.name }}**{% if p.hersteller %} · {{ p.hersteller }}{% endif %}" +
     " — {{ p.typ or p.kategorie }}\n" +
     "  {% if p.modus == 'Wiederholend' %}↻ alle {{ p.intervall }} {{ p.einheit }}" +
-    " ({{ p.phase }}){% else %}" +
+    " ({{ p.phase }}){% if p.menge %} · {{ p.menge }}{% endif %}{% else %}" +
     "{% for pt in p.punkte %}📅 {{ pt.phase }} " +
-    "{{ 'Woche' if pt.einheit == 'Wochen' else 'Tag' }} {{ pt.wert }} " +
+    "{{ 'Woche' if pt.einheit == 'Wochen' else 'Tag' }} {{ pt.wert }}" +
+    "{% if pt.menge_txt %} ({{ pt.menge_txt }}){% endif %} " +
     "{% endfor %}{% endif %}" +
     " {% if p.strains %}· 🔗 {{ p.strains | join(', ') }}" +
     "{% else %}· _nicht verknüpft_{% endif %}\n" +
@@ -1210,6 +1211,7 @@ function duengerView(a) {
     "{% set tt = state_attr('" + G + "grow_tag','duenger_termine') or [] %}\n" +
     "{% if tt %}{% for t in tt[:14] %}" +
     "- **{{ as_datetime(t.datum).strftime('%d.%m.') }}** {{ t.produkt }}" +
+    "{% if t.menge %} {{ t.menge }}{% endif %}" +
     " → {{ t.strain }}\n" +
     "{% endfor %}{% else %}_Keine anstehenden Termine (Produkte anlegen und " +
     "mit Strains verknüpfen)._{% endif %}";
@@ -1226,6 +1228,8 @@ function duengerView(a) {
         ] },
         bsel(sp + "duenger_kategorie", "Kategorie"),
         bsel(sp + "duenger_typ", "Typ"),
+        bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
+        bslider(np + "duenger_menge", "Menge je Anwendung (0 = ohne)"),
         bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
         bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
         // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
@@ -1256,11 +1260,25 @@ function duengerView(a) {
       { type: "grid", cards: [
         sep("Strain-Verknüpfung", "mdi:link-variant"),
         { type: "markdown", content:
-          "Verknüpfte Produkte werden automatisch für den Strain **terminiert** " +
-          "(Kalender + Push am Anwendungstag)." },
+          "**Einzelprodukt** verknüpfen ODER die komplette **Hersteller-" +
+          "Methode** (alle Produkte des Herstellers, z. B. BioTabs). " +
+          "Termine landen im Kalender + Push am Anwendungstag." },
         bsel(sp + "duenger_strain", "Strain wählen"),
         bbtn(bp + "duenger_link", "Produkt mit Strain verknüpfen", "mdi:link-variant"),
-        bbtn(bp + "duenger_unlink", "Verknüpfung trennen", "mdi:link-variant-off"),
+        bbtn(bp + "duenger_unlink", "Produkt-Verknüpfung trennen", "mdi:link-variant-off"),
+        bsel(sp + "duenger_hersteller_sel", "Hersteller (Methode)"),
+        bbtn(bp + "duenger_h_link", "Hersteller-Methode verknüpfen", "mdi:factory"),
+        bbtn(bp + "duenger_h_unlink", "Hersteller-Methode trennen", "mdi:link-variant-off"),
+        sep("Extra-Regel (nur dieser Strain)", "mdi:star-plus"),
+        { type: "markdown", content:
+          "Eigene Dosierung fürs **gewählte Produkt + Strain**: oben Plan/" +
+          "Menge einstellen, Wirkung wählen — **zusätzlich** (obendrauf, " +
+          "z. B. 5 ml/L jede Woche extra) oder **ersetzt** (der Strain " +
+          "bekommt NUR diese Regel statt des Standardplans)." },
+        bsel(sp + "duenger_extra_art", "Wirkung (zusätzlich / ersetzt)"),
+        bbtn(bp + "duenger_extra_add", "Extra-Regel für Strain anlegen", "mdi:star-plus"),
+        bsel(sp + "duenger_extra_sel", "Extra-Regel (zum Entfernen)"),
+        bbtn(bp + "duenger_extra_remove", "Gewählte Extra-Regel entfernen", "mdi:star-minus"),
         sep("Nächste Termine", "mdi:calendar-clock"),
         { type: "markdown", content: terminListe },
         bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),

@@ -167,9 +167,12 @@ class ControlosCalendar(CalendarEntity):
                                   heute - timedelta(days=30),
                                   heute + timedelta(days=90)):
                 icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
+                m = t.get("menge") or ""
                 evs.append(CalendarEvent(
                     start=t["datum"], end=t["datum"] + timedelta(days=1),
-                    summary="%s %s – %s" % (icon, t["produkt"], t["strain"]),
+                    summary="%s %s%s – %s" % (
+                        icon, t["produkt"], (" " + m) if m else "",
+                        t["strain"]),
                     description=(t.get("typ") or t["kategorie"])))
 
             # Notizen mit Faelligkeitsdatum

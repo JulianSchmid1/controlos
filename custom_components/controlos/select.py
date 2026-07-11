@@ -36,6 +36,8 @@ async def async_setup_entry(
     ents.append(DuengerTypSelect(entry))
     ents.append(DuengerProduktSelect(entry))
     ents.append(DuengerStrainSelect(entry))
+    ents.append(DuengerHerstellerSelect(entry))
+    ents.append(DuengerExtraSelect(entry))
     async_add_entities(ents)
 
 
@@ -310,6 +312,111 @@ class DuengerStrainSelect(ControlosBaseEntity, SelectEntity):
         strains = store.strains(self._entry.entry_id) if store else []
         opts = ["%d. %s" % (i + 1, s.get("name") or "?")
                 for i, s in enumerate(strains)]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_index(self) -> int:
+        try:
+            return self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return -1
+
+
+class DuengerHerstellerSelect(ControlosBaseEntity, SelectEntity):
+    """Hersteller-Auswahl (dynamisch aus den angelegten Produkten)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_hersteller_sel",
+                         {"name": "Hersteller (Methode)",
+                          "icon": "mdi:factory"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        prod = store.duenger_produkte() if store else []
+        opts = sorted({(p.get("hersteller") or "").strip()
+                       for p in prod} - {""})
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+
+class DuengerExtraSelect(ControlosBaseEntity, SelectEntity):
+    """Extra-Regeln des gerade gewaehlten Strains (zum Entfernen)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_extra_sel",
+                         {"name": "Extra-Regel (zum Entfernen)",
+                          "icon": "mdi:star"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        if not store:
+            return ["—"]
+        ents = (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+        ssel = ents.get("duenger_strain")
+        idx = ssel.selected_index() if ssel is not None else -1
+        strains = store.strains(self._entry.entry_id)
+        if not (0 <= idx < len(strains)):
+            return ["—"]
+        pmap = {p.get("id"): p.get("name", "?")
+                for p in store.duenger_produkte()}
+        opts = []
+        for i, r in enumerate(strains[idx].get("extra_regeln") or []):
+            if r.get("modus") == "Wiederholend":
+                plan = "alle %s %s" % (r.get("intervall"), r.get("einheit"))
+            else:
+                plan = "%s %s %s" % (r.get("phase"), r.get("einheit"),
+                                     r.get("wert"))
+            art = " · ersetzt" if r.get("art") == "ersetzt" else ""
+            opts.append("%d. %s (%s%s)" % (i + 1,
+                                           pmap.get(r.get("pid"), "?"),
+                                           plan, art))
         return opts or ["—"]
 
     def refresh_options(self) -> None:
