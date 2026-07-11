@@ -497,24 +497,31 @@ class Regler:
             # Toleranz = 100%-Zone (Stufe hoch). Die Schalt-Hysterese
             # liegt damit komplett INNERHALB der Toleranz; nz verhindert
             # Flattern an der Zonengrenze (+ MIN_SWITCH_S).
+            # Geschaltet wird auf dem GEGLAETTETEN VPD (ø ~5 min): die kurzen
+            # Einbrueche waehrend der AC-Kompressorphasen wuerden sonst den
+            # Entfeuchter im Dauertakt triggern und das Zelt uebertrocknen.
+            vpd_g = d.get("data_vpd_glatt")
+            if vpd_g is None:
+                vpd_g = vpd
             nz = max(0.02, vpd_tol / 8.0)
             lo_perf = (vpd_min + vpd_ziel) / 2.0
             hi_perf = (vpd_ziel + vpd_max) / 2.0
-            ent_on = (self.latch("ent", vpd <= lo_perf, vpd >= lo_perf + nz,
+            ent_on = (self.latch("ent", vpd_g <= lo_perf, vpd_g >= lo_perf + nz,
                                  min_s=entf_min_s)
                       if ent_da else self.latch("ent", False, True))
-            bef_on = (self.latch("bef", vpd >= hi_perf, vpd <= hi_perf - nz)
+            bef_on = (self.latch("bef", vpd_g >= hi_perf, vpd_g <= hi_perf - nz)
                       if bef_da else self.latch("bef", False, True))
             if bef_on and ent_on:  # Latch-Uebergang: nie beide gleichzeitig
-                if vpd >= vpd_ziel:
+                if vpd_g >= vpd_ziel:
                     ent_on = False
                 else:
                     bef_on = False
-            bef_dim = (vpd, hi_perf, vpd_max)
-            ent_dim = (vpd, lo_perf, vpd_min)
-            ent_stage_frac = 0.999 if vpd <= vpd_min else 0.0
-            bef_stage_frac = 0.999 if vpd >= vpd_max else 0.0
-            hum_info = "VPD %.2f [%.2f|%.2f|%.2f]" % (vpd, vpd_min, vpd_ziel, vpd_max)
+            bef_dim = (vpd_g, hi_perf, vpd_max)
+            ent_dim = (vpd_g, lo_perf, vpd_min)
+            ent_stage_frac = 0.999 if vpd_g <= vpd_min else 0.0
+            bef_stage_frac = 0.999 if vpd_g >= vpd_max else 0.0
+            hum_info = "VPD %.2f (ø%.2f) [%.2f|%.2f|%.2f]" % (
+                vpd, vpd_g, vpd_min, vpd_ziel, vpd_max)
         elif hum is not None:
             ent_on, bef_on = self.pair_hyst(
                 "ent", "bef", hum, ziel_hum - f_tol, ziel_hum + f_tol,

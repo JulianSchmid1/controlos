@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .duengerplan import KATEGORIE_ICON, alle_termine
 from .entity_base import area_slug, device_info_for
 
 
@@ -154,6 +155,22 @@ class ControlosCalendar(CalendarEntity):
                     evs.append(CalendarEvent(
                         start=start, end=end + timedelta(days=1),
                         summary="%s %s" % (icon, st.get("name") or "?")))
+
+            # Duengeplan: Anwendungs-Termine je Strain (90 Tage voraus)
+            typ2 = getattr(self._ents().get("grow_typ"),
+                           "current_option", None) or "Photoperiodisch"
+            bstart2 = _as_date(getattr(self._ents().get("bluete_start"),
+                                       "native_value", None))
+            for t in alle_termine(store.duenger_produkte(),
+                                  store.strains(self._entry.entry_id),
+                                  typ2 == "Autoflowering", bstart2,
+                                  heute - timedelta(days=30),
+                                  heute + timedelta(days=90)):
+                icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
+                evs.append(CalendarEvent(
+                    start=t["datum"], end=t["datum"] + timedelta(days=1),
+                    summary="%s %s – %s" % (icon, t["produkt"], t["strain"]),
+                    description=(t.get("typ") or t["kategorie"])))
 
             # Notizen mit Faelligkeitsdatum
             for t in store.todos(self._entry.entry_id):

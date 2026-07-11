@@ -782,6 +782,11 @@ function kalenderView(a) {
           { condition: "state", entity: sp + "grow_typ", state: "Photoperiodisch" }] };
         return { type: "grid", cards: [
           sep("Grow-Verwaltung", "mdi:sprout"),
+          { type: "custom:mushroom-template-card", icon: "mdi:bottle-tonic",
+            icon_color: "green", primary: "Pflanzenpflege öffnen",
+            secondary: "Dünger, Pflanzenschutz, Nützlinge & Termine",
+            tap_action: { action: "navigate",
+              navigation_path: "/" + DASH + "/bereich-" + s + "-duenger" } },
           { type: "entities", entities: [
             { entity: "text.controlos_" + s + "_grow_name", name: "Grow-Name" },
             { entity: sp + "zelt_typ", name: "Zelt-Typ" },
@@ -872,6 +877,7 @@ function configView(a) {
         nav("Klima-Regelung", "Ziele, Steuermodi, AC, CO2, Lüfter, KI", "mdi:thermostat", "red", "klima"),
         nav("Licht", "Zeitplan, Zyklus, Sonnenauf-/-untergang", "mdi:lightbulb-on", "amber", "licht"),
         nav("Geräte & Sensoren", "Zuordnung, Dimmer, Quellen", "mdi:power-plug", "blue", "geraete"),
+        nav("Pflanzenpflege", "Dünger, Pflanzenschutz, Nützlinge", "mdi:bottle-tonic", "green", "duenger"),
         nav("System & Benachrichtigungen", "Watchdog, Speicher, Push", "mdi:bell-cog", "teal", "system"),
         { type: "custom:controlos-delete-button", entry_id: a.entry_id,
           area_name: a.title, redirect: "/" + DASH + "/einstellungen" },
@@ -1164,6 +1170,7 @@ function systemView(a) {
         bsw(wp + "notify_geraet", "Geräte-Ausfall", "mdi:bell"),
         V(bsw(wp + "notify_sensor", "Sensor-Ausfall", "mdi:bell"), sNot("sensor_temp_luft")),
         bsw(wp + "notify_notizen", "Fällige Notizen", "mdi:bell"),
+        bsw(wp + "notify_duenger", "Pflanzenpflege fällig", "mdi:bell"),
         V(bsw(wp + "notify_temp", "Temperatur-Alarm", "mdi:bell"), sNot("sensor_temp_luft")),
         V(bsw(wp + "notify_feuchte", "Feuchte-Alarm", "mdi:bell"), sNot("sensor_feuchte_luft")),
         V(bsw(wp + "notify_vpd", "VPD-Alarm", "mdi:bell"), ...vpdOk),
@@ -1174,6 +1181,85 @@ function systemView(a) {
         ...alarmParam("temp", "Temperatur", [sNot("sensor_temp_luft")]),
         ...alarmParam("feuchte", "Feuchte", [sNot("sensor_feuchte_luft")]),
         ...alarmParam("vpd", "VPD", vpdOk),
+      ] },
+    ] };
+}
+
+/* Unterseite: Pflanzenpflege-Plan (Dünger / Pflanzenschutz / Nützlinge) */
+function duengerView(a) {
+  const s = slug(a.title);
+  const G = "sensor.controlos_" + s + "_";
+  const sp = "select.controlos_" + s + "_";
+  const np = "number.controlos_" + s + "_";
+  const bp = "button.controlos_" + s + "_";
+  const wp = "switch.controlos_" + s + "_";
+  const cEq = (e, st) => ({ condition: "state", entity: e, state: st });
+  const V = (c, ...conds) => Object.assign(c, { visibility: conds });
+  const produktListe =
+    "{% set dp = state_attr('" + G + "grow_tag','duengerplan') or [] %}\n" +
+    "{% if dp %}{% for p in dp %}" +
+    "- **{{ p.name }}**{% if p.hersteller %} · {{ p.hersteller }}{% endif %}" +
+    " — {{ p.typ or p.kategorie }}\n" +
+    "  {% if p.modus == 'Wiederholend' %}↻ alle {{ p.intervall }} {{ p.einheit }}" +
+    " ({{ p.phase }}){% else %}" +
+    "{% for pt in p.punkte %}📅 {{ pt.phase }} " +
+    "{{ 'Woche' if pt.einheit == 'Wochen' else 'Tag' }} {{ pt.wert }} " +
+    "{% endfor %}{% endif %}" +
+    " {% if p.strains %}· 🔗 {{ p.strains | join(', ') }}" +
+    "{% else %}· _nicht verknüpft_{% endif %}\n" +
+    "{% endfor %}{% else %}_Noch keine Produkte angelegt._{% endif %}";
+  const terminListe =
+    "{% set tt = state_attr('" + G + "grow_tag','duenger_termine') or [] %}\n" +
+    "{% if tt %}{% for t in tt[:14] %}" +
+    "- **{{ as_datetime(t.datum).strftime('%d.%m.') }}** {{ t.produkt }}" +
+    " → {{ t.strain }}\n" +
+    "{% endfor %}{% else %}_Keine anstehenden Termine (Produkte anlegen und " +
+    "mit Strains verknüpfen)._{% endif %}";
+  return { title: a.title + " · Pflanzenpflege", path: "bereich-" + s + "-duenger",
+    icon: "mdi:bottle-tonic", subview: true, theme: THEME,
+    type: "sections", max_columns: 3, sections: [
+      { type: "grid", cards: [
+        sep("Produkt anlegen", "mdi:plus-circle"),
+        { type: "entities", entities: [
+          { entity: "text.controlos_" + s + "_duenger_hersteller",
+            name: "Hersteller (z. B. BioTabs)" },
+          { entity: "text.controlos_" + s + "_duenger_name",
+            name: "Produkt (z. B. Orgatrex)" },
+        ] },
+        bsel(sp + "duenger_kategorie", "Kategorie"),
+        bsel(sp + "duenger_typ", "Typ"),
+        bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
+        bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
+        // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
+        V(bsel(sp + "duenger_phase", "Phase (Veg / Blüte)"),
+          cEq(sp + "grow_typ", "Photoperiodisch")),
+        V(bslider(np + "duenger_zeitpunkt", "Zeitpunkt (Tag-/Wochen-Nr.)"),
+          cEq(sp + "duenger_plan_modus", "Einmalig")),
+        V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
+          cEq(sp + "duenger_plan_modus", "Wiederholend")),
+        bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
+      ] },
+      { type: "grid", cards: [
+        sep("Produkte & Zeitpunkte", "mdi:bottle-tonic"),
+        { type: "markdown", content: produktListe },
+        bsel(sp + "duenger_produkt", "Produkt wählen"),
+        { type: "markdown", content:
+          "**Weiterer Zeitpunkt** fürs gewählte Produkt: oben Phase/Einheit/" +
+          "Zeitpunkt einstellen, dann hinzufügen (z. B. Woche 2, 5 und 8)." },
+        bbtn(bp + "duenger_punkt_add", "Zeitpunkt hinzufügen", "mdi:calendar-plus"),
+        bbtn(bp + "duenger_entfernen", "Gewähltes Produkt entfernen", "mdi:minus-circle"),
+      ] },
+      { type: "grid", cards: [
+        sep("Strain-Verknüpfung", "mdi:link-variant"),
+        { type: "markdown", content:
+          "Verknüpfte Produkte werden automatisch für den Strain **terminiert** " +
+          "(Kalender + Push am Anwendungstag)." },
+        bsel(sp + "duenger_strain", "Strain wählen"),
+        bbtn(bp + "duenger_link", "Produkt mit Strain verknüpfen", "mdi:link-variant"),
+        bbtn(bp + "duenger_unlink", "Verknüpfung trennen", "mdi:link-variant-off"),
+        sep("Nächste Termine", "mdi:calendar-clock"),
+        { type: "markdown", content: terminListe },
+        bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),
       ] },
     ] };
 }
@@ -1197,6 +1283,7 @@ class ControlosDashboardStrategy {
     for (const a of areas) views.push(monitorView(a, hass));
     for (const a of areas) views.push(graphenView(a));
     for (const a of areas) views.push(kalenderView(a));
+    for (const a of areas) views.push(duengerView(a));
     for (const a of areas) views.push(configView(a));
     for (const a of areas) views.push(klimaView(a));
     for (const a of areas) views.push(lichtView(a));

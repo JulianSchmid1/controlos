@@ -54,3 +54,13 @@ class ControlosButton(ButtonEntity):
             await coord.async_notify_remove()
         elif self._key == "notiz_anlegen":
             await coord.async_notiz_anlegen()
+        elif self._key == "duenger_anlegen":
+            await coord.async_duenger_anlegen()
+        elif self._key == "duenger_punkt_add":
+            await coord.async_duenger_punkt_add()
+        elif self._key == "duenger_entfernen":
+            await coord.async_duenger_entfernen()
+        elif self._key == "duenger_link":
+            await coord.async_duenger_link(True)
+        elif self._key == "duenger_unlink":
+            await coord.async_duenger_link(False)

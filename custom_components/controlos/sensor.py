@@ -73,7 +73,9 @@ class ControlosDataSensor(CoordinatorEntity, SensorEntity):
             return {"phasen_historie": data.get("_history", []),
                     "strains": data.get("_strains", []),
                     "grow_archiv": data.get("_grow_archive", []),
-                    "notify_targets": data.get("_notify_targets", [])}
+                    "notify_targets": data.get("_notify_targets", []),
+                    "duengerplan": data.get("_duengerplan", []),
+                    "duenger_termine": data.get("_duenger_termine", [])}
         if self._key == "ki_vpd_prognose":
             data = self.coordinator.data or {}
             return {"prognose": data.get("_ki_prognose", [])}

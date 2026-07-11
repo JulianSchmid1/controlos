@@ -13,7 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import (DOMAIN, PHASES, SELECT_DEVICE_PARAMS, SELECT_PARAMS,
+from .const import (DOMAIN, DUENGER_TYPEN, PHASES, SELECT_DEVICE_PARAMS,
+                    SELECT_PARAMS,
                     VEG_ZYKLEN, ZELT_PHASES)
 from .entity_base import (ControlosBaseEntity, area_slug, device_info_for,
                           store_entity)
@@ -32,6 +33,9 @@ async def async_setup_entry(
     ents.append(NotifyTargetSelect(entry))
     ents.append(NotifyRemoveSelect(entry))
     ents.append(StrainSelect(entry))
+    ents.append(DuengerTypSelect(entry))
+    ents.append(DuengerProduktSelect(entry))
+    ents.append(DuengerStrainSelect(entry))
     async_add_entities(ents)
 
 
@@ -193,6 +197,141 @@ class StrainSelect(ControlosBaseEntity, SelectEntity):
 
     def selected_index(self) -> int:
         """0-basierter Index des gewaehlten Strains, -1 wenn keiner."""
+        try:
+            return self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return -1
+
+
+class DuengerTypSelect(ControlosBaseEntity, SelectEntity):
+    """Produkt-Typ; Optionen haengen von der gewaehlten Kategorie ab."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_typ",
+                         {"name": "Typ", "icon": "mdi:tag"}, "select")
+        self._attr_options = list(DUENGER_TYPEN["Dünger"])
+        self._attr_current_option = self._attr_options[0]
+
+    def _compute(self) -> list[str]:
+        ents = (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+        kat = getattr(ents.get("duenger_kategorie"), "current_option", None)
+        return list(DUENGER_TYPEN.get(kat or "Dünger", DUENGER_TYPEN["Dünger"]))
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in self._attr_options:
+            self._attr_current_option = last.state
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+
+class DuengerProduktSelect(ControlosBaseEntity, SelectEntity):
+    """Auswahl eines angelegten Duengeplan-Produkts (global)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_produkt",
+                         {"name": "Produkt (Auswahl)",
+                          "icon": "mdi:bottle-tonic-outline"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        prod = store.duenger_produkte() if store else []
+        opts = ["%d. %s" % (i + 1, p.get("name") or "?")
+                for i, p in enumerate(prod)]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_id(self) -> str | None:
+        """Produkt-ID der aktuellen Auswahl (None wenn keine)."""
+        store = self._store()
+        if not store:
+            return None
+        prod = store.duenger_produkte()
+        try:
+            idx = self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return None
+        return prod[idx].get("id") if 0 <= idx < len(prod) else None
+
+
+class DuengerStrainSelect(ControlosBaseEntity, SelectEntity):
+    """Strain-Auswahl fuer die Duenger-Verknuepfung (eigener Select, damit
+    der Entfernen-Select der Grow-Verwaltung unberuehrt bleibt)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_strain",
+                         {"name": "Strain (für Verknüpfung)",
+                          "icon": "mdi:cannabis"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        store = self._store()
+        strains = store.strains(self._entry.entry_id) if store else []
+        opts = ["%d. %s" % (i + 1, s.get("name") or "?")
+                for i, s in enumerate(strains)]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_index(self) -> int:
         try:
             return self._attr_options.index(self._attr_current_option)
         except ValueError:

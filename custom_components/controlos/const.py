@@ -15,6 +15,31 @@ TEXT_PARAMS = {
     "grow_name":   {"name": "Grow-Name", "icon": "mdi:sprout", "default": "Mein Grow"},
     "strain_name": {"name": "Strain (Sorte)", "icon": "mdi:cannabis", "default": ""},
     "notiz_text":  {"name": "Neue Notiz / Erinnerung", "icon": "mdi:note-edit", "default": ""},
+    "duenger_hersteller": {"name": "Hersteller", "icon": "mdi:factory", "default": ""},
+    "duenger_name":       {"name": "Produktname", "icon": "mdi:bottle-tonic", "default": ""},
+}
+
+# Duengeplan: Typen je Kategorie
+DUENGER_TYPEN = {
+    "Dünger": ["Wachstum", "Blüte", "CalMag", "Wurzelstimulator", "Enzyme",
+               "Mikroorganismen/Tee", "PK-Booster", "Sonstiges"],
+    "Pflanzenschutzmittel": ["Insektizid", "Fungizid"],
+    "Nützlinge": [
+        "SF-Nematoden (Steinernema feltiae)",
+        "HB-Nematoden (Heterorhabditis bacteriophora)",
+        "Raubmilben (Phytoseiulus persimilis)",
+        "Raubmilben (Amblyseius californicus)",
+        "Raubmilben (Amblyseius cucumeris)",
+        "Raubmilben (Amblyseius swirskii)",
+        "Bodenraubmilben (Stratiolaelaps scimitus)",
+        "Bodenraubmilben (Macrocheles robustulus)",
+        "Florfliegenlarven (Chrysoperla carnea)",
+        "Schlupfwespen (Encarsia formosa)",
+        "Schlupfwespen (Aphidius colemani)",
+        "Gallmücken (Aphidoletes aphidimyza)",
+        "Marienkäfer (Adalia bipunctata)",
+        "Kurzflügelkäfer (Atheta coriaria)",
+    ],
 }
 
 # TIME: Licht-Zeitplan je Bereich (zeitbasiert -> unabhaengig von Sensorik)
@@ -87,6 +112,11 @@ BUTTON_PARAMS = {
     "benachrichtigung_add":    {"name": "Zielgerät hinzufügen",         "icon": "mdi:cellphone-check"},
     "benachrichtigung_remove": {"name": "Gewähltes Zielgerät entfernen", "icon": "mdi:cellphone-remove"},
     "notiz_anlegen": {"name": "Notiz hinzufügen", "icon": "mdi:note-plus"},
+    "duenger_anlegen":   {"name": "Produkt anlegen",             "icon": "mdi:plus-circle"},
+    "duenger_punkt_add": {"name": "Zeitpunkt hinzufügen",        "icon": "mdi:calendar-plus"},
+    "duenger_entfernen": {"name": "Gewähltes Produkt entfernen", "icon": "mdi:minus-circle"},
+    "duenger_link":      {"name": "Mit Strain verknüpfen",       "icon": "mdi:link-variant"},
+    "duenger_unlink":    {"name": "Verknüpfung trennen",         "icon": "mdi:link-variant-off"},
 }
 
 # ---------------------------------------------------------------------------
@@ -126,6 +156,9 @@ NUMBER_PARAMS = {
     "uv_dauer":         {"name": "UV Dauer (Tagesmitte)", "min": 1, "max": 120, "step": 1, "unit": "min", "icon": "mdi:sun-wireless", "default": 60},
     "uv_dauer_morgens": {"name": "UV Dauer morgens (vor Licht)", "min": 1, "max": 30, "step": 1, "unit": "min", "icon": "mdi:weather-sunset-up", "default": 10},
     "uv_dauer_abends":  {"name": "UV Dauer abends (nach Licht)", "min": 1, "max": 30, "step": 1, "unit": "min", "icon": "mdi:weather-sunset-down", "default": 10},
+    # -- Duengeplan --
+    "duenger_zeitpunkt": {"name": "Zeitpunkt (Tag/Woche Nr.)", "min": 1, "max": 150, "step": 1, "unit": "", "icon": "mdi:calendar-cursor", "default": 1},
+    "duenger_intervall": {"name": "Wiederholen alle", "min": 1, "max": 60, "step": 1, "unit": "", "icon": "mdi:repeat", "default": 7},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
     "vpd_bias_tag":   {"name": "VPD-Bias Tag",   "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
     "vpd_bias_nacht": {"name": "VPD-Bias Nacht", "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
@@ -198,6 +231,7 @@ SWITCH_PARAMS = {
     "notify_temp":    {"name": "Meldung: Temperatur-Alarm", "icon": "mdi:bell", "default": True},
     "notify_feuchte": {"name": "Meldung: Feuchte-Alarm",    "icon": "mdi:bell", "default": True},
     "notify_vpd":     {"name": "Meldung: VPD-Alarm",        "icon": "mdi:bell", "default": True},
+    "notify_duenger": {"name": "Meldung: Pflanzenpflege fällig", "icon": "mdi:bell", "default": True},
     # "Enge Hysterese": Einzelgeraet schaltet am ZIEL ab (halbe Hysterese,
     # z.B. gegen Uebertrocknen). Aus = volle Hysterese bis zur gegenueber-
     # liegenden Bandkante (fuer sehr traege Geraete). Bei zwei Geraeten
@@ -239,6 +273,11 @@ SELECT_PARAMS = {
     "benachrichtigung_modus": {"name": "Benachrichtigung an", "icon": "mdi:cellphone-message", "options": ["Alle Geräte", "Auswahl"], "default": "Alle Geräte"},
     # Erinnerungsart beim Anlegen einer Notiz (setzt intern das Steuerwort)
     "notiz_erinnerung": {"name": "Erinnerung", "icon": "mdi:bell-ring", "options": ["Einmalig (am Fälligkeitstag)", "Täglich bis erledigt", "Wöchentlich", "Stumm (keine Meldung)"], "default": "Einmalig (am Fälligkeitstag)"},
+    # -- Duengeplan --
+    "duenger_kategorie":  {"name": "Kategorie", "icon": "mdi:shape", "options": ["Dünger", "Pflanzenschutzmittel", "Nützlinge"], "default": "Dünger"},
+    "duenger_plan_modus": {"name": "Anwendung", "icon": "mdi:repeat", "options": ["Einmalig", "Wiederholend"], "default": "Einmalig"},
+    "duenger_zeiteinheit": {"name": "Zeiteinheit", "icon": "mdi:calendar-clock", "options": ["Tage", "Wochen"], "default": "Wochen"},
+    "duenger_phase":      {"name": "Phase", "icon": "mdi:sprout", "options": ["Ganzer Grow", "Vegetation", "Blüte"], "default": "Ganzer Grow"},
     # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
     "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},
     "feuchte_alarm_modus": {"name": "Feuchte-Alarmart", "icon": "mdi:water-alert",       "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},

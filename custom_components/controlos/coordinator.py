@@ -23,6 +23,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
+from .duengerplan import KATEGORIE_ICON, alle_termine
 from .entity_base import area_slug
 from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
@@ -114,6 +115,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
         self._dev_track: dict = {}     # geraet_*-Select -> zuletzt zugewiesen
         self._pe_loaded = False        # Phasen-Editor-Werte initial geladen?
         self._ramp_last: dict = {}     # Rampen-Ticker: zuletzt gesendetes %
+        self._vpd_glatt: list = []     # (ts, vpd) der letzten ~5 min
 
     # -- Zugriff --
     def _ents(self):
@@ -349,6 +351,19 @@ class ControlosCoordinator(DataUpdateCoordinator):
             "_temp_fresh": temp_fresh,
         }
 
+        # Geglaetteter VPD (Mittel ueber ~5 min) fuer die Feuchte-Aktorik:
+        # kurze VPD-Einbrueche waehrend der AC-Kompressorphasen sollen den
+        # Entfeuchter nicht triggern (sonst Dauertakten + Uebertrocknen).
+        jetzt = _time.time()
+        if vpd is not None:
+            self._vpd_glatt.append((jetzt, vpd))
+        self._vpd_glatt = [(t, v) for t, v in self._vpd_glatt
+                           if jetzt - t <= 300]
+        data["data_vpd_glatt"] = (
+            round(sum(v for _, v in self._vpd_glatt)
+                  / len(self._vpd_glatt), 2)
+            if self._vpd_glatt else None)
+
         # Ist-Helligkeit des Undercanopy-Dimmers (in %)
         uc_dim = ctx.sel("dimmer_undercanopy")
         uc_hell = None
@@ -431,6 +446,33 @@ class ControlosCoordinator(DataUpdateCoordinator):
             data["_strains"] = list(g.get("strains") or [])
             data["_grow_archive"] = list(g.get("archive") or [])
             data["_notify_targets"] = store.notify_targets(self.entry.entry_id)
+
+            # -- Duengeplan: Anzeige-Liste + Termine (Kalender/Meldungen) --
+            produkte = store.duenger_produkte()
+            autoflower = (ctx.sel_raw("grow_typ") == "Autoflowering")
+            _bs = getattr(ents.get("bluete_start"), "native_value", None)
+            bstart_d = _bs if isinstance(_bs, date) else None
+            termine = alle_termine(produkte, data["_strains"], autoflower,
+                                   bstart_d, today, today + timedelta(days=90))
+            data["_duengerplan"] = [
+                {"name": p.get("name"), "hersteller": p.get("hersteller"),
+                 "kategorie": p.get("kategorie"), "typ": p.get("typ"),
+                 "modus": p.get("modus"), "einheit": p.get("einheit"),
+                 "phase": p.get("phase"), "intervall": p.get("intervall"),
+                 "punkte": p.get("punkte") or [],
+                 "strains": [s.get("name") for s in data["_strains"]
+                             if p.get("id") in (s.get("duenger") or [])]}
+                for p in produkte]
+            data["_duenger_termine"] = [
+                {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
+                 "strain": t["strain"], "kategorie": t["kategorie"],
+                 "typ": t["typ"]}
+                for t in termine[:40]]
+            data["_duenger_heute"] = [
+                {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
+                 "strain": t["strain"], "kategorie": t["kategorie"],
+                 "typ": t["typ"], "pid": t["pid"]}
+                for t in termine if t["datum"] == today]
 
             # -- Bluetetage (je Grow-Typ) --
             # Quelle ist das Datumsfeld "Blüte-Startdatum" (manuell korrigier-
@@ -701,6 +743,22 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 geaendert = True
             if geaendert:
                 store.set_todos(self.entry.entry_id, items)
+
+        # Duengeplan: heute faellige Anwendungen (je Produkt+Strain+Tag genau
+        # eine Meldung; Merker im Store ueberlebt Neustarts)
+        if store and ctx.sw("notify_duenger"):
+            for t in data.get("_duenger_heute") or []:
+                key = "dg|%s|%s|%s" % (t["pid"], t["strain"], t["datum"])
+                if store.duenger_erinnert(key) == t["datum"]:
+                    continue
+                icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
+                await melde(
+                    key, "%s ControlOS: %s anwenden" % (icon, t["produkt"]),
+                    "[%s] Heute fällig: %s (%s) für %s." % (
+                        name, t["produkt"], t.get("typ") or t["kategorie"],
+                        t["strain"]),
+                    cooldown=0)
+                store.set_duenger_erinnert(key, t["datum"])
 
     # ------------------------------------------------------------------
     async def _ki_tick(self, ctx, data) -> None:
@@ -1072,3 +1130,75 @@ class ControlosCoordinator(DataUpdateCoordinator):
         # Formular leeren fuer die naechste Notiz
         if text_ent is not None:
             await text_ent.async_set_value("")
+
+    # -- Duengeplan ------------------------------------------------------
+    async def async_duenger_anlegen(self) -> None:
+        """Produkt aus dem Formular anlegen (Einmalig: erster Zeitpunkt
+        gleich mit; weitere per 'Zeitpunkt hinzufuegen')."""
+        store = self._store()
+        ents = self._ents()
+        ctx = _Ctx(self.hass, ents)
+        name_ent = ents.get("duenger_name")
+        pname = (getattr(name_ent, "native_value", "") or "").strip()
+        if store is None or not pname:
+            return
+        modus = ctx.sel_raw("duenger_plan_modus") or "Einmalig"
+        einheit = ctx.sel_raw("duenger_zeiteinheit") or "Wochen"
+        phase = ctx.sel_raw("duenger_phase") or "Ganzer Grow"
+        p = {"id": _uuid.uuid4().hex, "name": pname,
+             "hersteller": (getattr(ents.get("duenger_hersteller"),
+                                    "native_value", "") or "").strip(),
+             "kategorie": ctx.sel_raw("duenger_kategorie") or "Dünger",
+             "typ": ctx.sel_raw("duenger_typ") or "",
+             "modus": modus, "einheit": einheit, "phase": phase,
+             "punkte": [],
+             "intervall": int(ctx.num("duenger_intervall", 7))}
+        if modus == "Einmalig":
+            p["punkte"].append({"wert": int(ctx.num("duenger_zeitpunkt", 1)),
+                                "einheit": einheit, "phase": phase})
+        store.add_duenger_produkt(p)
+        sel = ents.get("duenger_produkt")
+        if sel is not None:
+            sel.refresh_options()
+        if name_ent is not None:
+            await name_ent.async_set_value("")
+        await self.async_request_refresh()
+
+    async def async_duenger_punkt_add(self) -> None:
+        """Weiteren Anwendungs-Zeitpunkt zum gewaehlten Produkt hinzufuegen."""
+        store = self._store()
+        ents = self._ents()
+        ctx = _Ctx(self.hass, ents)
+        sel = ents.get("duenger_produkt")
+        pid = sel.selected_id() if sel is not None else None
+        if store is None or not pid:
+            return
+        store.add_duenger_punkt(pid, {
+            "wert": int(ctx.num("duenger_zeitpunkt", 1)),
+            "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
+            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow"})
+        await self.async_request_refresh()
+
+    async def async_duenger_entfernen(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        sel = ents.get("duenger_produkt")
+        pid = sel.selected_id() if sel is not None else None
+        if store is None or not pid:
+            return
+        store.remove_duenger_produkt(pid)
+        sel.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_duenger_link(self, verbinden: bool) -> None:
+        """Gewaehltes Produkt mit gewaehltem Strain verknuepfen/trennen."""
+        store = self._store()
+        ents = self._ents()
+        psel = ents.get("duenger_produkt")
+        ssel = ents.get("duenger_strain")
+        pid = psel.selected_id() if psel is not None else None
+        idx = ssel.selected_index() if ssel is not None else -1
+        if store is None or not pid or idx < 0:
+            return
+        store.duenger_link(self.entry.entry_id, idx, pid, verbinden)
+        await self.async_request_refresh()
