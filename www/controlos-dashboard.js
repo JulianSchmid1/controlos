@@ -831,10 +831,10 @@ function kalenderView(a) {
       { type: "grid", cards: [
         sep("Notizen & Erinnerungen", "mdi:notebook-edit"),
         // Anlege-Formular: Erinnerungsart direkt als Auswahl (statt Steuerwort)
-        { type: "entities", entities: [
-          { entity: "text.controlos_" + s + "_notiz_text", name: "Notiz / Erinnerung" },
-          { entity: "date.controlos_" + s + "_notiz_datum", name: "Fällig am" },
-        ] },
+        bstate("text.controlos_" + s + "_notiz_text",
+          "Notiz / Erinnerung (tippen)", "mdi:note-edit"),
+        bstate("date.controlos_" + s + "_notiz_datum", "Fällig am",
+          "mdi:calendar-alert"),
         bsel(sp + "notiz_erinnerung", "Erinnerung (Häufigkeit)"),
         bbtn(bp + "notiz_anlegen", "Notiz hinzufügen", "mdi:note-plus"),
         { type: "todo-list", entity: "todo.controlos_" + s + "_notizen",
@@ -1230,13 +1230,15 @@ function duengerView(a) {
     icon: "mdi:bottle-tonic", subview: true, theme: THEME,
     type: "sections", max_columns: 3, sections: [
       { type: "grid", cards: [
+        sep("Hersteller", "mdi:factory"),
+        // Einmal anlegen, danach nur noch auswaehlen
+        bstate("text.controlos_" + s + "_duenger_hersteller",
+          "Neuer Hersteller (tippen zum Eingeben)", "mdi:factory"),
+        bbtn(bp + "duenger_hersteller_neu", "Hersteller anlegen", "mdi:factory"),
         sep("Produkt anlegen", "mdi:plus-circle"),
-        { type: "entities", entities: [
-          { entity: "text.controlos_" + s + "_duenger_hersteller",
-            name: "Hersteller (z. B. BioTabs)" },
-          { entity: "text.controlos_" + s + "_duenger_name",
-            name: "Produkt (z. B. Orgatrex)" },
-        ] },
+        bsel(sp + "duenger_hersteller_sel", "Hersteller wählen"),
+        bstate("text.controlos_" + s + "_duenger_name",
+          "Produktname (tippen zum Eingeben)", "mdi:bottle-tonic"),
         bsel(sp + "duenger_kategorie", "Kategorie"),
         bsel(sp + "duenger_typ", "Typ"),
         bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
@@ -1267,10 +1269,9 @@ function duengerView(a) {
           cEq(sp + "duenger_plan_modus", "Einmalig")),
         V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
-        // Zahlenfeld statt Slider: praeziser Wert, handytauglich
-        { type: "entities", entities: [
-          { entity: np + "duenger_menge",
-            name: "Menge je Anwendung (0 = ohne)" }] },
+        // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich)
+        bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
+          "mdi:beaker"),
         bbtn(bp + "duenger_regel_add", "Regel zum Produkt hinzufügen", "mdi:calendar-plus"),
         bsel(sp + "duenger_regel_sel", "Regel (zum Entfernen)"),
         bbtn(bp + "duenger_regel_remove", "Gewählte Regel entfernen", "mdi:calendar-minus"),

@@ -132,6 +132,15 @@ class ControlosStore:
         return list(self.data.setdefault(
             "duenger", {"produkte": [], "erinnert": {}}).get("produkte") or [])
 
+    def hersteller_liste(self) -> list:
+        return list(self.data["duenger"].setdefault("hersteller", []))
+
+    def add_hersteller(self, name: str) -> None:
+        d = self.data["duenger"].setdefault("hersteller", [])
+        if name and name not in d:
+            d.append(name)
+            self._save()
+
     def add_duenger_produkt(self, p: dict) -> None:
         self.data["duenger"].setdefault("produkte", []).append(p)
         self._save()

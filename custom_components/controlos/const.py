@@ -117,6 +117,7 @@ BUTTON_PARAMS = {
     "benachrichtigung_remove": {"name": "Gewähltes Zielgerät entfernen", "icon": "mdi:cellphone-remove"},
     "notiz_anlegen": {"name": "Notiz hinzufügen", "icon": "mdi:note-plus"},
     "duenger_anlegen":   {"name": "Produkt anlegen",             "icon": "mdi:plus-circle"},
+    "duenger_hersteller_neu": {"name": "Hersteller anlegen",     "icon": "mdi:factory"},
     "duenger_regel_add":    {"name": "Regel zum Produkt hinzufügen", "icon": "mdi:calendar-plus"},
     "duenger_regel_remove": {"name": "Gewählte Regel entfernen",     "icon": "mdi:calendar-minus"},
     "duenger_entfernen": {"name": "Gewähltes Produkt entfernen", "icon": "mdi:minus-circle"},

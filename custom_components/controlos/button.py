@@ -60,6 +60,8 @@ class ControlosButton(ButtonEntity):
             await coord.async_notiz_anlegen()
         elif self._key == "duenger_anlegen":
             await coord.async_duenger_anlegen()
+        elif self._key == "duenger_hersteller_neu":
+            await coord.async_hersteller_anlegen()
         elif self._key == "duenger_regel_add":
             await coord.async_duenger_regel_add()
         elif self._key == "duenger_regel_remove":

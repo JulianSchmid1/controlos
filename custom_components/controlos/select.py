@@ -451,10 +451,13 @@ class DuengerHerstellerSelect(ControlosBaseEntity, SelectEntity):
 
     def _compute(self) -> list[str]:
         store = self._store()
-        prod = store.duenger_produkte() if store else []
-        opts = sorted({(p.get("hersteller") or "").strip()
-                       for p in prod} - {""})
-        return opts or ["—"]
+        if not store:
+            return ["—"]
+        # Angelegte Hersteller + die aus bestehenden Produkten
+        opts = set(store.hersteller_liste())
+        opts |= {(p.get("hersteller") or "").strip()
+                 for p in store.duenger_produkte()}
+        return sorted(opts - {""}) or ["—"]
 
     def refresh_options(self) -> None:
         new = self._compute()

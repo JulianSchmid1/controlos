@@ -1268,9 +1268,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
         if store is None or not pname:
             return
         # Produkt = reine Stammdaten; Anwendungs-Regeln kommen separat dazu
+        # Hersteller: gewaehlter aus der Liste; Freitext nur als Fallback
+        h_sel = getattr(ents.get("duenger_hersteller_sel"),
+                        "current_option", None)
+        if not h_sel or h_sel == "—":
+            h_sel = (getattr(ents.get("duenger_hersteller"),
+                             "native_value", "") or "").strip()
         p = {"id": _uuid.uuid4().hex, "name": pname,
-             "hersteller": (getattr(ents.get("duenger_hersteller"),
-                                    "native_value", "") or "").strip(),
+             "hersteller": h_sel,
              "kategorie": ctx.sel_raw("duenger_kategorie") or "Dünger",
              "typ": ctx.sel_raw("duenger_typ") or "",
              "regeln": [],
@@ -1351,6 +1356,22 @@ class ControlosCoordinator(DataUpdateCoordinator):
             return
         store.duenger_link(self.entry.entry_id, idx, pid, verbinden)
         await self.async_request_refresh()
+
+    async def async_hersteller_anlegen(self) -> None:
+        """Neuen Hersteller aus dem Textfeld in die Auswahl-Liste."""
+        store = self._store()
+        ents = self._ents()
+        te = ents.get("duenger_hersteller")
+        name = (getattr(te, "native_value", "") or "").strip()
+        if store is None or not name:
+            return
+        store.add_hersteller(name)
+        sel = ents.get("duenger_hersteller_sel")
+        if sel is not None:
+            sel.refresh_options()
+            await sel.async_select_option(name)
+        if te is not None:
+            await te.async_set_value("")
 
     async def async_duenger_hersteller_link(self, verbinden: bool) -> None:
         """Hersteller-Methode: alle Produkte des Herstellers fuer den Strain."""
