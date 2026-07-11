@@ -25,16 +25,23 @@ KATEGORIE_ICON = {"Dünger": "💧", "Pflanzenschutzmittel": "🛡️",
                   "Nützlinge": "🐞"}
 
 
-def menge_txt(menge, form) -> str:
-    """'5 ml/L' / '20 g/kg' oder '' wenn keine Menge gesetzt."""
+def menge_einheit(p: dict) -> str:
+    """Mengen-Einheit eines Produkts (ml/L/g/kg; Altdaten: aus der Form)."""
+    e = p.get("menge_einheit")
+    if e:
+        return e
+    return "g" if p.get("form") == "Trocken" else "ml"
+
+
+def menge_txt(menge, einheit) -> str:
+    """'5 ml' / '20 g' / '1 L' oder '' wenn keine Menge gesetzt."""
     try:
         m = float(menge)
     except (TypeError, ValueError):
         return ""
     if m <= 0:
         return ""
-    einheit = "g/kg" if form == "Trocken" else "ml/L"
-    return "%g %s" % (m, einheit)
+    return "%g %s" % (m, einheit or "ml")
 
 
 def _tage(wert, einheit) -> int:
@@ -65,7 +72,7 @@ def _plan_termine(plan: dict, p: dict, eintrag: dict, strain_start, ernte,
                   bluete_start, autoflower, von, bis) -> list[dict]:
     """Termine eines Plans (Produkt-Plan ODER Extra-Regel)."""
     out: list[dict] = []
-    form = p.get("form", "Flüssig")
+    form = menge_einheit(p)
     if plan.get("modus") == "Wiederholend":
         phase = plan.get("phase", "Ganzer Grow")
         ref = _ref(phase, strain_start, bluete_start, autoflower)
@@ -128,32 +135,58 @@ def termine_fuer_strain(produkte: list, st: dict, autoflower: bool,
     ersetzt = {r.get("pid") for r in (st.get("extra_regeln") or [])
                if r.get("art") == "ersetzt"}
 
-    # Normaler Plan: direkt verknuepft ODER Hersteller-Methode
+    # Normaler Plan: direkt verknuepft ODER Hersteller-Methode. Produkte
+    # tragen ihre Anwendungs-Regeln als Liste ("regeln"); die Altstruktur
+    # (Plan direkt am Produkt) wird weiter verstanden.
     for p in produkte:
         if p.get("id") in ersetzt:
             continue
-        if (p.get("id") in ids
+        if not (p.get("id") in ids
                 or (p.get("hersteller") or "").lower() in hlinks):
-            out.extend(_plan_termine(p, p, _eintrag(p), strain_start, ernte,
-                                     bluete_start, autoflower, von, bis))
+            continue
+        regeln = p.get("regeln")
+        plaene = ([regel_zu_plan(r) for r in regeln] if regeln
+                  else ([p] if p.get("modus") else []))
+        for plan in plaene:
+            out.extend(_plan_termine(plan, p, _eintrag(p), strain_start,
+                                     ernte, bluete_start, autoflower,
+                                     von, bis))
 
-    # Extra-Regeln (nur dieser Strain, additiv zum normalen Plan)
+    # Extra-Regeln (nur dieser Strain)
     for r in (st.get("extra_regeln") or []):
         p = pmap.get(r.get("pid"))
         if not p:
             continue
-        plan = {"modus": r.get("modus", "Einmalig"),
-                "einheit": r.get("einheit", "Tage"),
-                "phase": r.get("phase", "Ganzer Grow"),
-                "intervall": r.get("intervall", 7),
-                "menge": r.get("menge"),
-                "punkte": [{"wert": r.get("wert", 1),
-                            "einheit": r.get("einheit", "Tage"),
-                            "phase": r.get("phase", "Ganzer Grow"),
-                            "menge": r.get("menge")}]}
-        out.extend(_plan_termine(plan, p, _eintrag(p), strain_start, ernte,
-                                 bluete_start, autoflower, von, bis))
+        out.extend(_plan_termine(regel_zu_plan(r), p, _eintrag(p),
+                                 strain_start, ernte, bluete_start,
+                                 autoflower, von, bis))
     return out
+
+
+def regel_zu_plan(r: dict) -> dict:
+    """Anwendungs-Regel -> Plan-Dict fuer _plan_termine."""
+    return {"modus": r.get("modus", "Einmalig"),
+            "einheit": r.get("einheit", "Tage"),
+            "phase": r.get("phase", "Ganzer Grow"),
+            "intervall": r.get("intervall", 7),
+            "menge": r.get("menge"),
+            "punkte": [{"wert": r.get("wert", 1),
+                        "einheit": r.get("einheit", "Tage"),
+                        "phase": r.get("phase", "Ganzer Grow"),
+                        "menge": r.get("menge")}]}
+
+
+def regel_txt(r: dict, einheit_m: str) -> str:
+    """Kurzbeschreibung einer Regel fuer Listen/Selects."""
+    m = menge_txt(r.get("menge"), einheit_m)
+    if r.get("modus") == "Wiederholend":
+        s = "↻ alle %s %s (%s)" % (r.get("intervall"), r.get("einheit"),
+                                   r.get("phase"))
+    else:
+        s = "📅 %s %s (%s)" % (
+            "Woche" if r.get("einheit") == "Wochen" else "Tag",
+            r.get("wert"), r.get("phase"))
+    return s + ((" · " + m) if m else "")
 
 
 def alle_termine(produkte: list, strains: list, autoflower: bool,

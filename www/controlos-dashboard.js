@@ -1197,15 +1197,11 @@ function duengerView(a) {
     "{% set dp = state_attr('" + G + "grow_tag','duengerplan') or [] %}\n" +
     "{% if dp %}{% for p in dp %}" +
     "- **{{ p.name }}**{% if p.hersteller %} · {{ p.hersteller }}{% endif %}" +
-    " — {{ p.typ or p.kategorie }}\n" +
-    "  {% if p.modus == 'Wiederholend' %}↻ alle {{ p.intervall }} {{ p.einheit }}" +
-    " ({{ p.phase }}){% if p.menge %} · {{ p.menge }}{% endif %}{% else %}" +
-    "{% for pt in p.punkte %}📅 {{ pt.phase }} " +
-    "{{ 'Woche' if pt.einheit == 'Wochen' else 'Tag' }} {{ pt.wert }}" +
-    "{% if pt.menge_txt %} ({{ pt.menge_txt }}){% endif %} " +
-    "{% endfor %}{% endif %}" +
-    " {% if p.strains %}· 🔗 {{ p.strains | join(', ') }}" +
-    "{% else %}· _nicht verknüpft_{% endif %}\n" +
+    " — {{ p.typ or p.kategorie }} ({{ p.form }})\n" +
+    "{% for r in p.regeln %}  - {{ r }}\n{% endfor %}" +
+    "  - {% if p.strains %}🔗 {{ p.strains | join(', ') }}" +
+    "{% else %}_nicht verknüpft_{% endif %}" +
+    "{% if not p.regeln %} · ⚠️ _noch keine Regel_{% endif %}\n" +
     "{% endfor %}{% else %}_Noch keine Produkte angelegt._{% endif %}";
   const terminListe =
     "{% set tt = state_attr('" + G + "grow_tag','duenger_termine') or [] %}\n" +
@@ -1229,7 +1225,24 @@ function duengerView(a) {
         bsel(sp + "duenger_kategorie", "Kategorie"),
         bsel(sp + "duenger_typ", "Typ"),
         bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
-        bslider(np + "duenger_menge", "Menge je Anwendung (0 = ohne)"),
+        bsel(sp + "duenger_menge_einheit", "Mengen-Einheit"),
+        // Push-Verhalten am Anwendungstag: einmalig oder bis abgehakt
+        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
+        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+        bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
+        { type: "markdown", content: produktListe },
+        bbtn(bp + "duenger_entfernen", "Gewähltes Produkt entfernen", "mdi:minus-circle"),
+      ] },
+      { type: "grid", cards: [
+        sep("Anwendungs-Regeln", "mdi:calendar-multiselect"),
+        { type: "markdown", content:
+          "Beliebig viele Regeln je Produkt — z. B. „5 ml jede Woche\" " +
+          "**und** „20 ml in Woche 4\". Gilt für alle verknüpften Strains; " +
+          "sortenspezifisch geht rechts über die Extra-Regeln." },
+        bsel(sp + "duenger_produkt", "Produkt wählen"),
         bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
         bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
         // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
@@ -1239,23 +1252,13 @@ function duengerView(a) {
           cEq(sp + "duenger_plan_modus", "Einmalig")),
         V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
-        // Push-Verhalten am Anwendungstag: einmalig oder bis abgehakt
-        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
-        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
-        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
-        bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
-      ] },
-      { type: "grid", cards: [
-        sep("Produkte & Zeitpunkte", "mdi:bottle-tonic"),
-        { type: "markdown", content: produktListe },
-        bsel(sp + "duenger_produkt", "Produkt wählen"),
-        { type: "markdown", content:
-          "**Weiterer Zeitpunkt** fürs gewählte Produkt: oben Phase/Einheit/" +
-          "Zeitpunkt einstellen, dann hinzufügen (z. B. Woche 2, 5 und 8)." },
-        bbtn(bp + "duenger_punkt_add", "Zeitpunkt hinzufügen", "mdi:calendar-plus"),
-        bbtn(bp + "duenger_entfernen", "Gewähltes Produkt entfernen", "mdi:minus-circle"),
+        // Zahlenfeld statt Slider: praeziser Wert, handytauglich
+        { type: "entities", entities: [
+          { entity: np + "duenger_menge",
+            name: "Menge je Anwendung (0 = ohne)" }] },
+        bbtn(bp + "duenger_regel_add", "Regel zum Produkt hinzufügen", "mdi:calendar-plus"),
+        bsel(sp + "duenger_regel_sel", "Regel (zum Entfernen)"),
+        bbtn(bp + "duenger_regel_remove", "Gewählte Regel entfernen", "mdi:calendar-minus"),
       ] },
       { type: "grid", cards: [
         sep("Strain-Verknüpfung", "mdi:link-variant"),

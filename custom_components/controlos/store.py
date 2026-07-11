@@ -147,6 +147,22 @@ class ControlosStore:
                     st["duenger"].remove(pid)
         self._save()
 
+    def add_produkt_regel(self, pid: str, regel: dict) -> None:
+        for p in self.data["duenger"].get("produkte", []):
+            if p.get("id") == pid:
+                p.setdefault("regeln", []).append(regel)
+                self._save()
+                return
+
+    def remove_produkt_regel(self, pid: str, idx: int) -> None:
+        for p in self.data["duenger"].get("produkte", []):
+            if p.get("id") == pid:
+                regeln = p.get("regeln") or []
+                if 0 <= idx < len(regeln):
+                    regeln.pop(idx)
+                    self._save()
+                return
+
     def add_duenger_punkt(self, pid: str, punkt: dict) -> None:
         for p in self.data["duenger"].get("produkte", []):
             if p.get("id") == pid:

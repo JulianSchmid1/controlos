@@ -38,6 +38,8 @@ async def async_setup_entry(
     ents.append(DuengerStrainSelect(entry))
     ents.append(DuengerHerstellerSelect(entry))
     ents.append(DuengerExtraSelect(entry))
+    ents.append(DuengerMengeEinheitSelect(entry))
+    ents.append(DuengerRegelSelect(entry))
     async_add_entities(ents)
 
 
@@ -338,6 +340,100 @@ class DuengerStrainSelect(ControlosBaseEntity, SelectEntity):
             return self._attr_options.index(self._attr_current_option)
         except ValueError:
             return -1
+
+
+class DuengerRegelSelect(ControlosBaseEntity, SelectEntity):
+    """Anwendungs-Regeln des gewaehlten Produkts (zum Entfernen)."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_regel_sel",
+                         {"name": "Regel (zum Entfernen)",
+                          "icon": "mdi:format-list-numbered"}, "select")
+        self._attr_options = ["—"]
+        self._attr_current_option = "—"
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _compute(self) -> list[str]:
+        from .duengerplan import menge_einheit, regel_txt
+        store = self._store()
+        if not store:
+            return ["—"]
+        ents = (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+        psel = ents.get("duenger_produkt")
+        pid = psel.selected_id() if psel is not None else None
+        p = next((x for x in store.duenger_produkte()
+                  if x.get("id") == pid), None)
+        if not p:
+            return ["—"]
+        opts = ["%d. %s" % (i + 1, regel_txt(r, menge_einheit(p)))
+                for i, r in enumerate(p.get("regeln") or [])]
+        return opts or ["—"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attr_options = self._compute()
+        self._attr_current_option = self._attr_options[0]
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+    def selected_index(self) -> int:
+        try:
+            return self._attr_options.index(self._attr_current_option)
+        except ValueError:
+            return -1
+
+
+class DuengerMengeEinheitSelect(ControlosBaseEntity, SelectEntity):
+    """Mengen-Einheit; Optionen folgen der Form: Fluessig = ml/L,
+    Trocken = g/kg."""
+
+    def __init__(self, entry: ConfigEntry):
+        super().__init__(entry, "duenger_menge_einheit",
+                         {"name": "Mengen-Einheit", "icon": "mdi:scale"},
+                         "select")
+        self._attr_options = ["ml", "L"]
+        self._attr_current_option = "ml"
+
+    def _compute(self) -> list[str]:
+        ents = (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+        form = getattr(ents.get("duenger_form"), "current_option", "") or ""
+        return ["g", "kg"] if form.startswith("Trocken") else ["ml", "L"]
+
+    def refresh_options(self) -> None:
+        new = self._compute()
+        if new != self._attr_options:
+            self._attr_options = new
+            if self._attr_current_option not in new:
+                self._attr_current_option = new[0]
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("ml", "L", "g", "kg"):
+            self._attr_current_option = last.state
+        store_entity(self.hass, self._entry, self._key, self)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._attr_options:
+            self._attr_current_option = option
+            self.async_write_ha_state()
 
 
 class DuengerHerstellerSelect(ControlosBaseEntity, SelectEntity):

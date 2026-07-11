@@ -23,7 +23,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
-from .duengerplan import KATEGORIE_ICON, alle_termine, menge_txt
+from .duengerplan import (KATEGORIE_ICON, alle_termine, menge_einheit,
+                          menge_txt, regel_txt)
 from .entity_base import area_slug
 from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
@@ -462,13 +463,9 @@ class ControlosCoordinator(DataUpdateCoordinator):
             data["_duengerplan"] = [
                 {"name": p.get("name"), "hersteller": p.get("hersteller"),
                  "kategorie": p.get("kategorie"), "typ": p.get("typ"),
-                 "modus": p.get("modus"), "einheit": p.get("einheit"),
-                 "phase": p.get("phase"), "intervall": p.get("intervall"),
                  "form": p.get("form", "Flüssig"),
-                 "menge": menge_txt(p.get("menge"), p.get("form", "Flüssig")),
-                 "punkte": [dict(pt, menge_txt=menge_txt(
-                     pt.get("menge"), p.get("form", "Flüssig")))
-                     for pt in (p.get("punkte") or [])],
+                 "regeln": [regel_txt(r, menge_einheit(p))
+                            for r in (p.get("regeln") or [])],
                  "strains": [s.get("name") for s in data["_strains"]
                              if _gilt(p, s)]}
                 for p in produkte]
@@ -1229,17 +1226,13 @@ class ControlosCoordinator(DataUpdateCoordinator):
         pname = (getattr(name_ent, "native_value", "") or "").strip()
         if store is None or not pname:
             return
-        modus = ctx.sel_raw("duenger_plan_modus") or "Einmalig"
-        einheit = ctx.sel_raw("duenger_zeiteinheit") or "Wochen"
-        phase = ctx.sel_raw("duenger_phase") or "Ganzer Grow"
+        # Produkt = reine Stammdaten; Anwendungs-Regeln kommen separat dazu
         p = {"id": _uuid.uuid4().hex, "name": pname,
              "hersteller": (getattr(ents.get("duenger_hersteller"),
                                     "native_value", "") or "").strip(),
              "kategorie": ctx.sel_raw("duenger_kategorie") or "Dünger",
              "typ": ctx.sel_raw("duenger_typ") or "",
-             "modus": modus, "einheit": einheit, "phase": phase,
-             "punkte": [],
-             "intervall": int(ctx.num("duenger_intervall", 7)),
+             "regeln": [],
              "erinnerung": ("Intervall" if (ctx.sel_raw(
                  "duenger_erinnerung_modus") or "").startswith("Intervall")
                  else "Einmalig"),
@@ -1249,11 +1242,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                  "duenger_erinnerung_einheit") or "Stunden",
              "form": ("Trocken" if (ctx.sel_raw("duenger_form") or "")
                       .startswith("Trocken") else "Flüssig"),
-             "menge": ctx.num("duenger_menge", 0)}
-        if modus == "Einmalig":
-            p["punkte"].append({"wert": int(ctx.num("duenger_zeitpunkt", 1)),
-                                "einheit": einheit, "phase": phase,
-                                "menge": ctx.num("duenger_menge", 0)})
+             "menge_einheit": ctx.sel_raw("duenger_menge_einheit") or "ml"}
         store.add_duenger_produkt(p)
         sel = ents.get("duenger_produkt")
         if sel is not None:
@@ -1262,8 +1251,16 @@ class ControlosCoordinator(DataUpdateCoordinator):
             await name_ent.async_set_value("")
         await self.async_request_refresh()
 
-    async def async_duenger_punkt_add(self) -> None:
-        """Weiteren Anwendungs-Zeitpunkt zum gewaehlten Produkt hinzufuegen."""
+    def _regel_aus_formular(self, ctx) -> dict:
+        return {"modus": ctx.sel_raw("duenger_plan_modus") or "Einmalig",
+                "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
+                "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
+                "wert": int(ctx.num("duenger_zeitpunkt", 1)),
+                "intervall": int(ctx.num("duenger_intervall", 7)),
+                "menge": ctx.num("duenger_menge", 0)}
+
+    async def async_duenger_regel_add(self) -> None:
+        """Allgemeine Anwendungs-Regel (Formular) zum gewaehlten Produkt."""
         store = self._store()
         ents = self._ents()
         ctx = _Ctx(self.hass, ents)
@@ -1271,11 +1268,23 @@ class ControlosCoordinator(DataUpdateCoordinator):
         pid = sel.selected_id() if sel is not None else None
         if store is None or not pid:
             return
-        store.add_duenger_punkt(pid, {
-            "wert": int(ctx.num("duenger_zeitpunkt", 1)),
-            "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
-            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
-            "menge": ctx.num("duenger_menge", 0)})
+        store.add_produkt_regel(pid, self._regel_aus_formular(ctx))
+        rsel = ents.get("duenger_regel_sel")
+        if rsel is not None:
+            rsel.refresh_options()
+        await self.async_request_refresh()
+
+    async def async_duenger_regel_remove(self) -> None:
+        store = self._store()
+        ents = self._ents()
+        sel = ents.get("duenger_produkt")
+        rsel = ents.get("duenger_regel_sel")
+        pid = sel.selected_id() if sel is not None else None
+        idx = rsel.selected_index() if rsel is not None else -1
+        if store is None or not pid or idx < 0:
+            return
+        store.remove_produkt_regel(pid, idx)
+        rsel.refresh_options()
         await self.async_request_refresh()
 
     async def async_duenger_entfernen(self) -> None:
@@ -1327,16 +1336,10 @@ class ControlosCoordinator(DataUpdateCoordinator):
         idx = ssel.selected_index() if ssel is not None else -1
         if store is None or not pid or idx < 0:
             return
-        store.strain_extra_add(self.entry.entry_id, idx, {
-            "pid": pid,
-            "modus": ctx.sel_raw("duenger_plan_modus") or "Einmalig",
-            "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
-            "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
-            "wert": int(ctx.num("duenger_zeitpunkt", 1)),
-            "intervall": int(ctx.num("duenger_intervall", 7)),
-            "menge": ctx.num("duenger_menge", 0),
-            "art": ("ersetzt" if (ctx.sel_raw("duenger_extra_art") or "")
-                    .startswith("Ersetzt") else "zusaetzlich")})
+        store.strain_extra_add(self.entry.entry_id, idx, dict(
+            self._regel_aus_formular(ctx), pid=pid,
+            art=("ersetzt" if (ctx.sel_raw("duenger_extra_art") or "")
+                 .startswith("Ersetzt") else "zusaetzlich")))
         esel = ents.get("duenger_extra_sel")
         if esel is not None:
             esel.refresh_options()
