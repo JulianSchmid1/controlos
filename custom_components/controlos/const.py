@@ -305,6 +305,9 @@ SELECT_PARAMS = {
     "abluft_modus":    {"name": "Abluft Modus", "icon": "mdi:fan", "options": ["Auto", "Deaktiviert"], "default": "Auto"},
     "klima_modus_tag":   {"name": "AC-Modus Tag (Autonom)",   "icon": "mdi:weather-sunny", "options": ["Kühlen", "Heizen", "Auto", "Aus"], "default": "Kühlen"},
     "klima_modus_nacht": {"name": "AC-Modus Nacht (Autonom)", "icon": "mdi:weather-night", "options": ["Kühlen", "Heizen", "Auto", "Aus"], "default": "Aus"},
+    # Sensor-Modi (Area/Geraet/Hybrid): Luefterstaerke je Zustand
+    "klima_fan_aktiv":    {"name": "AC-Lüfter aktiv (Heizen/Kühlen)", "icon": "mdi:fan", "options": ["auto", "silent", "low", "medium", "high", "full"], "default": "auto"},
+    "klima_fan_leerlauf": {"name": "AC-Lüfter Leerlauf (nur Lüfter)", "icon": "mdi:fan-minus", "options": ["auto", "silent", "low", "medium", "high", "full"], "default": "silent"},
     "klima_fan_tag":   {"name": "AC-Lüfter Tag",   "icon": "mdi:fan", "options": ["auto", "low", "medium", "high"], "default": "auto"},
     "klima_fan_nacht": {"name": "AC-Lüfter Nacht", "icon": "mdi:fan", "options": ["auto", "low", "medium", "high"], "default": "auto"},
 }

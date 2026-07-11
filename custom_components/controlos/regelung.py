@@ -638,10 +638,19 @@ class Regler:
         else:
             klima_mode = aktiv_mode
             klima_target = round(klima_ziel_eff, 1)
+            # Sensor-Modi: Leerlauf = nur Luefter (wie Altsystem) statt AUS
+            if klima_mode == "off" and klima_is_climate \
+                    and "fan_only" in klima_modes:
+                klima_mode = "fan_only"
         if not d_klima:
             klima_mode = "off"
         kuehl_on = klima_mode == "cool"
-        klima_fan_eff = klima_fan if klima_mode in ("cool", "heat") else "auto"
+        if klima_sm == "Autonom":
+            klima_fan_eff = klima_fan if klima_mode in ("cool", "heat") else "auto"
+        elif klima_mode == "fan_only":
+            klima_fan_eff = ctx.sel_raw("klima_fan_leerlauf") or "auto"
+        else:
+            klima_fan_eff = ctx.sel_raw("klima_fan_aktiv") or "auto"
 
         # LIVE-Klima (nur Diffs). Wird jetzt direkt vom Betriebsmodus gesteuert
         # (Steuern = live schalten, Monitor = nur Shadow) - kein separater
@@ -665,7 +674,7 @@ class Regler:
                         sent.append("Modus=" + klima_mode)
                     else:
                         klima_acted = " [warte Mindestzeit]"
-                if klima_mode != "off":
+                if klima_mode not in ("off", "fan_only"):
                     try:
                         if cur_temp is None or abs(float(cur_temp) - float(klima_target)) >= 0.25:
                             klima_cmds.append(("climate", "set_temperature",
@@ -811,6 +820,7 @@ class Regler:
             shadow["klima"] = "[%s/%s] AUS -> %s%s" % (_live, _sm, d_klima, klima_acted)
         else:
             _ml = {"cool": "Kühlen", "heat": "Heizen", "dry": "Entfeuchten",
+                   "fan_only": "nur Lüfter",
                    "auto": "Auto"}.get(klima_mode, klima_mode)
             _tgt = " @ %.1fC" % klima_target if klima_mode in ("cool", "heat", "auto") else ""
             shadow["klima"] = "[%s/%s] %s (%s%s, fan %s) -> %s%s" % (
