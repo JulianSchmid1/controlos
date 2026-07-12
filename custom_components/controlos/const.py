@@ -178,6 +178,9 @@ NUMBER_PARAMS = {
     "temp_bias_nacht": {"name": "Temp-Bias Nacht", "min": -3, "max": 3, "step": 0.1, "unit": "°C", "icon": "mdi:brain", "default": 0},
     "hum_bias_tag":   {"name": "Feuchte-Bias Tag",   "min": -15, "max": 15, "step": 0.5, "unit": "%", "icon": "mdi:brain", "default": 0},
     "hum_bias_nacht": {"name": "Feuchte-Bias Nacht", "min": -15, "max": 15, "step": 0.5, "unit": "%", "icon": "mdi:brain", "default": 0},
+    # -- KI-Vorsteuerung (Prognose-Lead auf das VPD-Regelsignal) --
+    "ki_ff_staerke": {"name": "KI-Vorsteuerung Stärke", "min": 0, "max": 100, "step": 5, "unit": "%", "icon": "mdi:sine-wave", "default": 50},
+    "ki_ff_max_mae": {"name": "KI-Vorsteuerung MAE-Grenze", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:target-variant", "default": 0.2},
     # -- Klima-Steuerung --
     "klima_ziel_tag":   {"name": "AC-Ziel Tag",   "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 24},
     "klima_ziel_nacht": {"name": "AC-Ziel Nacht", "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 22},
@@ -230,6 +233,7 @@ SWITCH_PARAMS = {
     "aktiv":          {"name": "Aktiv",                "icon": "mdi:power", "default": False},
     "ki_engine":      {"name": "Echte KI (Datensammlung + Prognose)", "icon": "mdi:brain", "default": False},
     "ki_modus":       {"name": "KI-Bias (adaptiver Setpoint)", "icon": "mdi:auto-fix", "default": False},
+    "ki_vorsteuerung": {"name": "KI-Vorsteuerung (Prognose dämpft Schwingungen)", "icon": "mdi:chart-timeline-variant-shimmer", "default": False},
     "mqtt_watchdog":  {"name": "MQTT-Watchdog (Broker-Neustart bei Sensor-Ausfall)", "icon": "mdi:restart-alert", "default": True},
     "benachrichtigungen": {"name": "Benachrichtigungen", "icon": "mdi:bell", "default": True},
     "nacht_statisch": {"name": "Nachts statisch regeln", "icon": "mdi:weather-night", "default": False},

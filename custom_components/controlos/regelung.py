@@ -507,6 +507,28 @@ class Regler:
             vpd_g = d.get("data_vpd_glatt")
             if vpd_g is None:
                 vpd_g = vpd
+            # KI-Vorsteuerung: die 15-min-Prognose zieht das Regelsignal nach
+            # vorn (Lead-Kompensation). Geraete schalten damit VOR dem Ueber-/
+            # Unterschwinger statt hinterher - daempft die Hysterese-Pendel
+            # (Entfeuchter-Overshoot, AC-Kompressor-Taeler). Nur bei
+            # brauchbarem Modell (MAE-Grenze) und plausibler Prognose; die
+            # Staerke skaliert den Eingriff, der Hub ist hart begrenzt.
+            vpd_glatt_anzeige = vpd_g
+            ff_txt = ""
+            if ctx.sw("ki_vorsteuerung"):
+                prog15 = mae15 = None
+                for p in d.get("_ki_prognose") or []:
+                    if p.get("minuten") == 15:
+                        prog15, mae15 = p.get("vpd"), p.get("mae")
+                        break
+                if (prog15 is not None and 0.1 < prog15 < 4.0
+                        and mae15 is not None
+                        and mae15 <= ctx.num("ki_ff_max_mae", 0.2)):
+                    anteil = ctx.num("ki_ff_staerke", 50.0) / 100.0
+                    delta = max(-0.3, min(0.3, prog15 - vpd_g))
+                    if abs(anteil * delta) >= 0.005:
+                        vpd_g = round(vpd_g + anteil * delta, 3)
+                        ff_txt = "→%.2f" % vpd_g
             nz = max(0.02, vpd_tol / 8.0)
             lo_perf = (vpd_min + vpd_ziel) / 2.0
             hi_perf = (vpd_ziel + vpd_max) / 2.0
@@ -524,8 +546,8 @@ class Regler:
             ent_dim = (vpd_g, lo_perf, vpd_min)
             ent_stage_frac = 0.999 if vpd_g <= vpd_min else 0.0
             bef_stage_frac = 0.999 if vpd_g >= vpd_max else 0.0
-            hum_info = "VPD %.2f (ø%.2f) [%.2f|%.2f|%.2f]" % (
-                vpd, vpd_g, vpd_min, vpd_ziel, vpd_max)
+            hum_info = "VPD %.2f (ø%.2f%s) [%.2f|%.2f|%.2f]" % (
+                vpd, vpd_glatt_anzeige, ff_txt, vpd_min, vpd_ziel, vpd_max)
         elif hum is not None:
             ent_on, bef_on = self.pair_hyst(
                 "ent", "bef", hum, ziel_hum - f_tol, ziel_hum + f_tol,

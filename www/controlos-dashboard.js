@@ -28,7 +28,7 @@ const SW_VORHANDEN = [
   "vorhanden_undercanopy", "vorhanden_uv", "vorhanden_abluft",
   "vorhanden_ventilator", "vorhanden_umluft",
 ];
-const SW_OPTIONS = ["ki_engine", "ki_modus", "nacht_statisch"];
+const SW_OPTIONS = ["ki_engine", "ki_modus", "ki_vorsteuerung", "nacht_statisch"];
 const SHADOW = ["status", "licht", "undercanopy", "uv", "befeuchter",
   "entfeuchter", "heizung", "klima", "abluft", "co2", "ventilator", "umluft"];
 
@@ -930,6 +930,12 @@ function klimaView(a) {
         ...SW_OPTIONS.map((k) => bsw(wp + k, null)),
         sep("KI-Bias (nur VPD, tagsüber)", "mdi:brain"),
         bslider(np + "vpd_bias_tag", "VPD-Bias Tag (gelernt)"),
+        V(sep("KI-Vorsteuerung (Prognose)", "mdi:chart-timeline-variant-shimmer"),
+          cOn(wp + "ki_vorsteuerung")),
+        V(bslider(np + "ki_ff_staerke", "Stärke des Eingriffs"),
+          cOn(wp + "ki_vorsteuerung")),
+        V(bslider(np + "ki_ff_max_mae", "MAE-Grenze (Modellgüte)"),
+          cOn(wp + "ki_vorsteuerung")),
       ] },
       { type: "grid", cards: [
         V(sep("Klimaanlage (AC)", "mdi:air-conditioner"), cOn(wp + "vorhanden_klima")),

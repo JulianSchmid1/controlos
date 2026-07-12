@@ -391,6 +391,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
             except (ValueError, AttributeError):
                 _LOGGER.exception("Lichtzyklus %s", zyklus)
 
+        # -- Echte KI: Datenlogger + VPD-Prognose --
+        # (VOR der Regelung, damit die KI-Vorsteuerung die Prognose dieses
+        # Zyklus nutzt statt der 30 s alten aus dem letzten Tick)
+        try:
+            await self._ki_tick(ctx, data)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("KI-Tick")
+
         # -- Regelung --
         try:
             shadow, devices, klima_cmds, bias = self.regler.tick(ctx, data)
@@ -520,12 +528,6 @@ class ControlosCoordinator(DataUpdateCoordinator):
         else:
             data["phase_tag"] = None
             data["bluete_tag"] = None
-
-        # -- Echte KI: Datenlogger + VPD-Prognose --
-        try:
-            await self._ki_tick(ctx, data)
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception("KI-Tick")
 
         # -- Benachrichtigungen --
         try:
