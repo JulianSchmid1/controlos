@@ -898,6 +898,18 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     return None
 
             kst = dev_st["klima"]
+            # Hauptlicht-Dimmleistung (groesste Abwaermequelle): echter
+            # Dimmerwert falls vorhanden, sonst 100 % sobald an.
+            licht_pct = None
+            l_dim = ctx.sel("dimmer_licht")
+            lst = self.hass.states.get(l_dim) if l_dim else None
+            if lst is not None and lst.state == "on":
+                b = lst.attributes.get("brightness")
+                licht_pct = round(b / 2.55) if b is not None else 100
+            elif lst is not None and lst.state == "off":
+                licht_pct = 0
+            if licht_pct is None:
+                licht_pct = 100 * dev_on["licht"]
             ent_stufe = None
             s_eid = ctx.sel("stufe_entfeuchter")
             sst = self.hass.states.get(s_eid) if s_eid else None
@@ -923,6 +935,7 @@ class ControlosCoordinator(DataUpdateCoordinator):
                    "ent_stufe": ent_stufe,
                    "ent_hum": ctx.fnum(ctx.sel("sensor_entfeuchter")),
                    "licht": dev_on["licht"],
+                   "licht_pct": licht_pct,
                    "uc_pct": data.get("data_uc_helligkeit"),
                    "uv": dev_on["uv"]}
             if row["hum"] is not None:

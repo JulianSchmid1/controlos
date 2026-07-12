@@ -26,7 +26,7 @@ FIELDS = ["ts", "temp", "hum", "vpd", "blatt", "co2", "ist_tag",
           # Luefter, Entfeuchter-Stufe/-Feuchte, Licht/UC/UV (Abwaerme).
           # Alte Zeilen ohne diese Spalten bekommen Naeherungs-Fallbacks.
           "kwatt", "k_ist", "k_aussen", "k_fan",
-          "ent_stufe", "ent_hum", "licht", "uc_pct", "uv"]
+          "ent_stufe", "ent_hum", "licht", "licht_pct", "uc_pct", "uv"]
 HORIZONS_MIN = [5, 15, 30, 60, 120]   # Prognose-Horizonte (Minuten)
 MIN_ROWS = 2000          # ab hier wird trainiert (~17 h Daten)
 MAX_ROWS = 60000         # Trainings-Cap (~3 Wochen bei 30s-Takt)
@@ -166,7 +166,10 @@ class KiEngine:
             g("k_fan", 0.0) / 100.0,
             g("ent_stufe", ent),
             g("ent_hum", float(r["hum"])) / 10.0,
-            g("licht", ist_tag),                    # Abwaerme Hauptlicht
+            g("licht", ist_tag),                    # Hauptlicht an/aus
+            # Hauptlicht-Dimmleistung = groesste Abwaermequelle; nicht
+            # dimmbare Lampen liefern 100 % sobald an (Fallback).
+            g("licht_pct", 100.0 * g("licht", ist_tag)) / 100.0,
             g("uc_pct", 100.0 * ist_tag) / 100.0,   # Abwaerme Undercanopy
             g("uv", 0.0),                           # Abwaerme UV
             slope * 10.0,
