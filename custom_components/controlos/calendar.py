@@ -1,9 +1,13 @@
-"""ControlOS - Grow-Kalender je Bereich (Kalender-Entity).
+"""ControlOS - Kalender je Bereich (zwei Kalender-Entities).
 
-Zeigt automatisch: Phasen-Zeitraeume (aus dem Phasen-Tagebuch), Grow-/
+Grow-Kalender: Phasen-Zeitraeume (aus dem Phasen-Tagebuch), Grow-/
 Bluete-Start sowie Notizen mit Faelligkeitsdatum. Eigene Termine koennen
 ueber calendar.create_event bzw. das HA-Kalender-Panel angelegt werden
 (persistiert im ControlOS-Store).
+
+Pflege-Kalender: NUR die Pflanzenpflege-Anwendungstermine (Duenger/
+Pflanzenschutz/Nuetzlinge je Strain) - im Grow-Kalender erscheint
+Pflege nur noch als Erinnerungs-Notiz am Faelligkeitstag.
 """
 from __future__ import annotations
 
@@ -24,7 +28,8 @@ from .entity_base import area_slug, device_info_for
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    async_add_entities([ControlosCalendar(entry)])
+    async_add_entities([ControlosCalendar(entry),
+                        ControlosPflegeCalendar(entry)])
 
 
 def _strain_tage(st: dict) -> int | None:
@@ -165,24 +170,8 @@ class ControlosCalendar(CalendarEntity):
                         start=start, end=end + timedelta(days=1),
                         summary="%s %s" % (icon, st.get("name") or "?")))
 
-            # Duengeplan: Anwendungs-Termine je Strain (90 Tage voraus)
-            typ2 = getattr(self._ents().get("grow_typ"),
-                           "current_option", None) or "Photoperiodisch"
-            bstart2 = _as_date(getattr(self._ents().get("bluete_start"),
-                                       "native_value", None))
-            for t in alle_termine(store.duenger_produkte(),
-                                  store.strains(self._entry.entry_id),
-                                  typ2 == "Autoflowering", bstart2,
-                                  heute - timedelta(days=30),
-                                  heute + timedelta(days=90)):
-                icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
-                m = t.get("menge") or ""
-                evs.append(CalendarEvent(
-                    start=t["datum"], end=t["datum"] + timedelta(days=1),
-                    summary="%s %s%s – %s" % (
-                        icon, t["produkt"], (" " + m) if m else "",
-                        t["strain"]),
-                    description=(t.get("typ") or t["kategorie"])))
+            # Pflanzenpflege-Termine liegen im eigenen Pflege-Kalender;
+            # hier bleiben nur die Erinnerungs-Notizen am Faelligkeitstag.
 
             # Notizen mit Faelligkeitsdatum
             for t in store.todos(self._entry.entry_id):
@@ -252,3 +241,79 @@ class ControlosCalendar(CalendarEntity):
                   if e.get("uid") != uid]
         store.set_events(self._entry.entry_id, events)
         self.async_write_ha_state()
+
+
+class ControlosPflegeCalendar(CalendarEntity):
+    """Pflege-Kalender: alle Pflanzenpflege-Anwendungstermine je Strain.
+
+    Rein automatisch aus Produkten/Regeln/Verknuepfungen berechnet
+    (30 Tage zurueck, 120 voraus). Erledigte Anwendungen (abgehakte
+    Pflege-Notiz) erscheinen mit Haken.
+    """
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:watering-can"
+    _attr_name = "Pflege-Kalender"
+
+    def __init__(self, entry: ConfigEntry):
+        self._entry = entry
+        self._attr_unique_id = "%s_pflege" % entry.entry_id
+        self.entity_id = "calendar.controlos_%s_pflege" % area_slug(entry.title)
+
+    @property
+    def device_info(self):
+        return device_info_for(self._entry)
+
+    def _store(self):
+        return self.hass.data.get(DOMAIN, {}).get("store")
+
+    def _ents(self):
+        return (self.hass.data.get(DOMAIN, {})
+                .get(self._entry.entry_id, {}).get("entities", {}))
+
+    def _alle_events(self) -> list[CalendarEvent]:
+        store = self._store()
+        if not store:
+            return []
+        heute = date.today()
+        typ = getattr(self._ents().get("grow_typ"),
+                      "current_option", None) or "Photoperiodisch"
+        bstart = _as_date(getattr(self._ents().get("bluete_start"),
+                                  "native_value", None))
+        # Abgehakte Pflege-Notizen -> Haken statt Kategorie-Symbol
+        erledigt = {t.get("uid") for t in store.todos(self._entry.entry_id)
+                    if t.get("status") == "completed"}
+        merker = store.duenger_erinnert_alle()
+        evs: list[CalendarEvent] = []
+        for t in alle_termine(store.duenger_produkte(),
+                              store.strains(self._entry.entry_id),
+                              typ == "Autoflowering", bstart,
+                              heute - timedelta(days=30),
+                              heute + timedelta(days=120)):
+            icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
+            key = "dg|%s|%s|%s" % (t["pid"], t["strain"],
+                                   t["datum"].isoformat())
+            merk = merker.get(key)
+            if (isinstance(merk, dict) and merk.get("uid") in erledigt):
+                icon = "✅"
+            m = t.get("menge") or ""
+            evs.append(CalendarEvent(
+                start=t["datum"], end=t["datum"] + timedelta(days=1),
+                summary="%s %s%s – %s" % (
+                    icon, t["produkt"], (" " + m) if m else "",
+                    t["strain"]),
+                description=(t.get("typ") or t["kategorie"])))
+        evs.sort(key=lambda e: e.start)
+        return evs
+
+    @property
+    def event(self) -> CalendarEvent | None:
+        heute = date.today()
+        kommende = [e for e in self._alle_events() if e.end > heute]
+        return kommende[0] if kommende else None
+
+    async def async_get_events(self, hass, start_date, end_date):
+        s = start_date.date() if isinstance(start_date, datetime) else start_date
+        e = end_date.date() if isinstance(end_date, datetime) else end_date
+        return [ev for ev in self._alle_events()
+                if ev.start < e and ev.end > s]

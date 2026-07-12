@@ -480,11 +480,11 @@ class DuengerHerstellerSelect(ControlosBaseEntity, SelectEntity):
 
 
 class DuengerExtraSelect(ControlosBaseEntity, SelectEntity):
-    """Extra-Regeln des gerade gewaehlten Strains (zum Entfernen)."""
+    """Sonderregeln des gerade gewaehlten Strains (zum Entfernen)."""
 
     def __init__(self, entry: ConfigEntry):
         super().__init__(entry, "duenger_extra_sel",
-                         {"name": "Extra-Regel (zum Entfernen)",
+                         {"name": "Sonderregel (zum Entfernen)",
                           "icon": "mdi:star"}, "select")
         self._attr_options = ["—"]
         self._attr_current_option = "—"
@@ -512,7 +512,8 @@ class DuengerExtraSelect(ControlosBaseEntity, SelectEntity):
             else:
                 plan = "%s %s %s" % (r.get("phase"), r.get("einheit"),
                                      r.get("wert"))
-            art = " · ersetzt" if r.get("art") == "ersetzt" else ""
+            art = {"ersetzt": " · ersetzt Plan",
+                   "zusaetzlich": " · zusätzlich"}.get(r.get("art"), "")
             opts.append("%d. %s (%s%s)" % (i + 1,
                                            pmap.get(r.get("pid"), "?"),
                                            plan, art))

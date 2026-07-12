@@ -1235,6 +1235,14 @@ function duengerView(a) {
   return { title: a.title + " · Pflanzenpflege", path: "bereich-" + s + "-duenger",
     icon: "mdi:bottle-tonic", subview: true, theme: THEME,
     type: "sections", max_columns: 3, sections: [
+      // Alle Pflege-Termine als eigener Kalender (Balkenansicht im Monat);
+      // im Grow-Kalender erscheint Pflege nur noch als Erinnerungs-Notiz.
+      { type: "grid", column_span: 3, cards: [
+        sep("Pflege-Kalender", "mdi:watering-can"),
+        { type: "calendar", initial_view: "dayGridMonth",
+          entities: ["calendar.controlos_" + s + "_pflege"],
+          grid_options: { columns: "full", rows: 10 } },
+      ] },
       { type: "grid", cards: [
         sep("Hersteller", "mdi:factory"),
         // Einmal anlegen, danach nur noch auswaehlen
@@ -1249,12 +1257,6 @@ function duengerView(a) {
         bsel(sp + "duenger_typ", "Typ"),
         bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
         bsel(sp + "duenger_menge_einheit", "Mengen-Einheit"),
-        // Push-Verhalten am Anwendungstag: einmalig oder bis abgehakt
-        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
-        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
-        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
         bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
         { type: "markdown", content: produktListe },
         bbtn(bp + "duenger_entfernen", "Gewähltes Produkt entfernen", "mdi:minus-circle"),
@@ -1262,10 +1264,15 @@ function duengerView(a) {
       { type: "grid", cards: [
         sep("Anwendungs-Regeln", "mdi:calendar-multiselect"),
         { type: "markdown", content:
-          "Beliebig viele Regeln je Produkt — z. B. „5 ml jede Woche\" " +
-          "**und** „20 ml in Woche 4\". Gilt für alle verknüpften Strains; " +
-          "sortenspezifisch geht rechts über die Extra-Regeln." },
+          "EIN Formular für alles: **Normale Regel** gilt für alle " +
+          "verknüpften Strains. **Sonderregel** gilt NUR für den gewählten " +
+          "Strain und **ersetzt** dort die passende Normalregel (gleiche " +
+          "Anwendung + Phase, bei „Einmalig\" gleicher Zeitpunkt) — z. B. " +
+          "10 ml statt 5 ml wöchentlich; passt keine, wirkt sie zusätzlich." },
         bsel(sp + "duenger_produkt", "Produkt wählen"),
+        bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
+        V(bsel(sp + "duenger_strain", "Strain (für die Sonderregel)"),
+          cEq(sp + "duenger_regel_art", "Sonderregel (nur gewählter Strain)")),
         bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
         bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
         // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
@@ -1278,32 +1285,31 @@ function duengerView(a) {
         // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich)
         bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
           "mdi:beaker"),
-        bbtn(bp + "duenger_regel_add", "Regel zum Produkt hinzufügen", "mdi:calendar-plus"),
-        bsel(sp + "duenger_regel_sel", "Regel (zum Entfernen)"),
+        // Push-Verhalten am Anwendungstag: je Regel einstellbar
+        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
+        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
+          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+        bbtn(bp + "duenger_regel_add", "Regel hinzufügen", "mdi:calendar-plus"),
+        sep("Regeln entfernen", "mdi:calendar-minus"),
+        bsel(sp + "duenger_regel_sel", "Normale Regel (zum Entfernen)"),
         bbtn(bp + "duenger_regel_remove", "Gewählte Regel entfernen", "mdi:calendar-minus"),
+        bsel(sp + "duenger_extra_sel", "Sonderregel des gewählten Strains"),
+        bbtn(bp + "duenger_extra_remove", "Gewählte Sonderregel entfernen", "mdi:star-minus"),
       ] },
       { type: "grid", cards: [
         sep("Strain-Verknüpfung", "mdi:link-variant"),
         { type: "markdown", content:
           "**Einzelprodukt** verknüpfen ODER die komplette **Hersteller-" +
           "Methode** (alle Produkte des Herstellers, z. B. BioTabs). " +
-          "Termine landen im Kalender + Push am Anwendungstag." },
+          "Termine landen im Pflege-Kalender + Push am Anwendungstag." },
         bsel(sp + "duenger_strain", "Strain wählen"),
         bbtn(bp + "duenger_link", "Produkt mit Strain verknüpfen", "mdi:link-variant"),
         bbtn(bp + "duenger_unlink", "Produkt-Verknüpfung trennen", "mdi:link-variant-off"),
         bsel(sp + "duenger_hersteller_sel", "Hersteller (Methode)"),
         bbtn(bp + "duenger_h_link", "Hersteller-Methode verknüpfen", "mdi:factory"),
         bbtn(bp + "duenger_h_unlink", "Hersteller-Methode trennen", "mdi:link-variant-off"),
-        sep("Extra-Regel (nur dieser Strain)", "mdi:star-plus"),
-        { type: "markdown", content:
-          "Eigene Dosierung fürs **gewählte Produkt + Strain**: oben Plan/" +
-          "Menge einstellen, Wirkung wählen — **zusätzlich** (obendrauf, " +
-          "z. B. 5 ml/L jede Woche extra) oder **ersetzt** (der Strain " +
-          "bekommt NUR diese Regel statt des Standardplans)." },
-        bsel(sp + "duenger_extra_art", "Wirkung (zusätzlich / ersetzt)"),
-        bbtn(bp + "duenger_extra_add", "Extra-Regel für Strain anlegen", "mdi:star-plus"),
-        bsel(sp + "duenger_extra_sel", "Extra-Regel (zum Entfernen)"),
-        bbtn(bp + "duenger_extra_remove", "Gewählte Extra-Regel entfernen", "mdi:star-minus"),
         sep("Nächste Termine", "mdi:calendar-clock"),
         { type: "markdown", content: terminListe },
         bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),

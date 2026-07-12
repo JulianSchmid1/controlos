@@ -486,7 +486,11 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": t["strain"], "kategorie": t["kategorie"],
                  "typ": t["typ"], "pid": t["pid"],
-                 "menge": t.get("menge") or ""}
+                 "menge": t.get("menge") or "",
+                 "erinnerung": t.get("erinnerung") or "Einmalig",
+                 "erinnerung_intervall": t.get("erinnerung_intervall") or 4,
+                 "erinnerung_einheit": t.get("erinnerung_einheit")
+                 or "Stunden"}
                 for t in termine if t["datum"] == today]
 
             # -- Bluetetage (je Grow-Typ) --
@@ -803,6 +807,12 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     merk["typ"] = t.get("typ")
                     merk["produkt"] = t["produkt"]
                     merk["menge"] = t.get("menge") or ""
+                    # Push-Verhalten der ausloesenden Regel mitmerken
+                    merk["erinnerung"] = t.get("erinnerung") or "Einmalig"
+                    merk["erinnerung_intervall"] = t.get(
+                        "erinnerung_intervall") or 4
+                    merk["erinnerung_einheit"] = t.get(
+                        "erinnerung_einheit") or "Stunden"
                 if ctx.sw("notify_duenger") and not merk.get("gemeldet"):
                     await _pflege_push(key, t)
                     merk["gemeldet"] = jetzt_dt.isoformat()
@@ -822,13 +832,20 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 for key, merk in store.duenger_erinnert_alle().items():
                     if not (isinstance(merk, dict) and merk.get("uid")):
                         continue
-                    p = produkte_map.get(merk.get("pid"))
-                    if not p or p.get("erinnerung") != "Intervall":
+                    # Push-Verhalten steht am Merker (= Regel); Alt-Merker
+                    # ohne diese Felder erben es vom Produkt.
+                    p = produkte_map.get(merk.get("pid")) or {}
+                    modus = merk.get("erinnerung") or p.get("erinnerung")
+                    if modus != "Intervall":
                         continue
                     if merk["uid"] not in offen:
                         continue   # abgehakt/geloescht -> Ruhe
-                    step_h = max(1, int(p.get("erinnerung_intervall", 4))) * (
-                        24 if p.get("erinnerung_einheit") == "Tage" else 1)
+                    step_h = max(1, int(
+                        merk.get("erinnerung_intervall")
+                        or p.get("erinnerung_intervall", 4))) * (
+                        24 if (merk.get("erinnerung_einheit")
+                               or p.get("erinnerung_einheit")) == "Tage"
+                        else 1)
                     letzte = merk.get("gemeldet")
                     try:
                         wieder = (letzte is None or
@@ -1327,13 +1344,6 @@ class ControlosCoordinator(DataUpdateCoordinator):
              "kategorie": ctx.sel_raw("duenger_kategorie") or "Dünger",
              "typ": ctx.sel_raw("duenger_typ") or "",
              "regeln": [],
-             "erinnerung": ("Intervall" if (ctx.sel_raw(
-                 "duenger_erinnerung_modus") or "").startswith("Intervall")
-                 else "Einmalig"),
-             "erinnerung_intervall": int(
-                 ctx.num("duenger_erinnerung_intervall", 4)),
-             "erinnerung_einheit": ctx.sel_raw(
-                 "duenger_erinnerung_einheit") or "Stunden",
              "form": ("Trocken" if (ctx.sel_raw("duenger_form") or "")
                       .startswith("Trocken") else "Flüssig"),
              "menge_einheit": ctx.sel_raw("duenger_menge_einheit") or "ml"}
@@ -1351,10 +1361,20 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
                 "wert": int(ctx.num("duenger_zeitpunkt", 1)),
                 "intervall": int(ctx.num("duenger_intervall", 7)),
-                "menge": ctx.num("duenger_menge", 0)}
+                "menge": ctx.num("duenger_menge", 0),
+                # Push-Verhalten haengt an der Regel (nicht am Produkt)
+                "erinnerung": ("Intervall" if (ctx.sel_raw(
+                    "duenger_erinnerung_modus") or "").startswith("Intervall")
+                    else "Einmalig"),
+                "erinnerung_intervall": int(
+                    ctx.num("duenger_erinnerung_intervall", 4)),
+                "erinnerung_einheit": ctx.sel_raw(
+                    "duenger_erinnerung_einheit") or "Stunden"}
 
     async def async_duenger_regel_add(self) -> None:
-        """Allgemeine Anwendungs-Regel (Formular) zum gewaehlten Produkt."""
+        """EIN Regel-Formular: 'Normale Regel' -> Anwendungs-Regel am
+        Produkt (alle verknuepften Strains); 'Sonderregel' -> nur der
+        gewaehlte Strain, ersetzt dort die passende Normalregel."""
         store = self._store()
         ents = self._ents()
         ctx = _Ctx(self.hass, ents)
@@ -1362,10 +1382,22 @@ class ControlosCoordinator(DataUpdateCoordinator):
         pid = sel.selected_id() if sel is not None else None
         if store is None or not pid:
             return
-        store.add_produkt_regel(pid, self._regel_aus_formular(ctx))
-        rsel = ents.get("duenger_regel_sel")
-        if rsel is not None:
-            rsel.refresh_options()
+        art = ctx.sel_raw("duenger_regel_art") or ""
+        if art.startswith("Sonderregel"):
+            ssel = ents.get("duenger_strain")
+            idx = ssel.selected_index() if ssel is not None else -1
+            if idx < 0:
+                return
+            store.strain_extra_add(self.entry.entry_id, idx, dict(
+                self._regel_aus_formular(ctx), pid=pid, art="sonder"))
+            esel = ents.get("duenger_extra_sel")
+            if esel is not None:
+                esel.refresh_options()
+        else:
+            store.add_produkt_regel(pid, self._regel_aus_formular(ctx))
+            rsel = ents.get("duenger_regel_sel")
+            if rsel is not None:
+                rsel.refresh_options()
         await self.async_request_refresh()
 
     async def async_duenger_regel_remove(self) -> None:
@@ -1432,27 +1464,6 @@ class ControlosCoordinator(DataUpdateCoordinator):
         if store is None or not h or h == "—" or idx < 0:
             return
         store.hersteller_link(self.entry.entry_id, idx, h, verbinden)
-        await self.async_request_refresh()
-
-    async def async_duenger_extra_add(self) -> None:
-        """Strain-spezifische Extra-Regel: gewaehltes Produkt + aktuelles
-        Formular (Plan + Menge), gilt additiv NUR fuer diesen Strain."""
-        store = self._store()
-        ents = self._ents()
-        ctx = _Ctx(self.hass, ents)
-        psel = ents.get("duenger_produkt")
-        ssel = ents.get("duenger_strain")
-        pid = psel.selected_id() if psel is not None else None
-        idx = ssel.selected_index() if ssel is not None else -1
-        if store is None or not pid or idx < 0:
-            return
-        store.strain_extra_add(self.entry.entry_id, idx, dict(
-            self._regel_aus_formular(ctx), pid=pid,
-            art=("ersetzt" if (ctx.sel_raw("duenger_extra_art") or "")
-                 .startswith("Ersetzt") else "zusaetzlich")))
-        esel = ents.get("duenger_extra_sel")
-        if esel is not None:
-            esel.refresh_options()
         await self.async_request_refresh()
 
     async def async_duenger_extra_remove(self) -> None:

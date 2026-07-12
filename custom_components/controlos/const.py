@@ -118,15 +118,14 @@ BUTTON_PARAMS = {
     "notiz_anlegen": {"name": "Notiz hinzufügen", "icon": "mdi:note-plus"},
     "duenger_anlegen":   {"name": "Produkt anlegen",             "icon": "mdi:plus-circle"},
     "duenger_hersteller_neu": {"name": "Hersteller anlegen",     "icon": "mdi:factory"},
-    "duenger_regel_add":    {"name": "Regel zum Produkt hinzufügen", "icon": "mdi:calendar-plus"},
+    "duenger_regel_add":    {"name": "Regel hinzufügen",          "icon": "mdi:calendar-plus"},
     "duenger_regel_remove": {"name": "Gewählte Regel entfernen",     "icon": "mdi:calendar-minus"},
     "duenger_entfernen": {"name": "Gewähltes Produkt entfernen", "icon": "mdi:minus-circle"},
     "duenger_link":      {"name": "Mit Strain verknüpfen",       "icon": "mdi:link-variant"},
     "duenger_unlink":    {"name": "Verknüpfung trennen",         "icon": "mdi:link-variant-off"},
     "duenger_h_link":    {"name": "Hersteller-Methode verknüpfen", "icon": "mdi:factory"},
     "duenger_h_unlink":  {"name": "Hersteller-Methode trennen",    "icon": "mdi:link-variant-off"},
-    "duenger_extra_add":    {"name": "Extra-Regel für Strain anlegen", "icon": "mdi:star-plus"},
-    "duenger_extra_remove": {"name": "Gewählte Extra-Regel entfernen", "icon": "mdi:star-minus"},
+    "duenger_extra_remove": {"name": "Gewählte Sonderregel entfernen", "icon": "mdi:star-minus"},
 }
 
 # ---------------------------------------------------------------------------
@@ -296,7 +295,7 @@ SELECT_PARAMS = {
     "duenger_phase":      {"name": "Phase", "icon": "mdi:sprout", "options": ["Ganzer Grow", "Vegetation", "Blüte"], "default": "Ganzer Grow"},
     "duenger_erinnerung_modus": {"name": "Erinnerung (Push)", "icon": "mdi:bell-ring", "options": ["Einmalige Push-Nachricht", "Intervall bis abgehakt"], "default": "Einmalige Push-Nachricht"},
     "duenger_form": {"name": "Form", "icon": "mdi:water", "options": ["Flüssig (ml/L)", "Trocken (g/kg)"], "default": "Flüssig (ml/L)"},
-    "duenger_extra_art": {"name": "Extra-Regel wirkt", "icon": "mdi:star-cog", "options": ["Zusätzlich zum Plan", "Ersetzt den Plan (individuell)"], "default": "Zusätzlich zum Plan"},
+    "duenger_regel_art": {"name": "Regel-Art", "icon": "mdi:star-cog", "options": ["Normale Regel (alle Strains)", "Sonderregel (nur gewählter Strain)"], "default": "Normale Regel (alle Strains)"},
     "duenger_erinnerung_einheit": {"name": "Erinnerungs-Einheit", "icon": "mdi:timer-sand", "options": ["Stunden", "Tage"], "default": "Stunden"},
     # -- Klima-Alarm-Schwellenart je Parameter: Toleranz (um Sollwert) oder feste Min/Max --
     "temp_alarm_modus":    {"name": "Temp-Alarmart",    "icon": "mdi:thermometer-alert", "options": ["Toleranz", "Min/Max"], "default": "Toleranz"},

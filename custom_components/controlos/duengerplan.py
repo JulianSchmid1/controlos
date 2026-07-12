@@ -10,9 +10,21 @@ Produkte (global) tragen ihren Anwendungsplan selbst:
 
 Ein Produkt gilt fuer einen Strain, wenn es direkt verknuepft ist
 (st.duenger) ODER sein Hersteller als Methode verknuepft ist
-(st.hersteller_links). Zusaetzlich kann ein Strain Extra-Regeln haben
-(st.extra_regeln: eigener Plan + Menge fuer ein Produkt, gilt nur fuer
-diesen Strain und ADDITIV zum normalen Plan).
+(st.hersteller_links).
+
+Regel-Arten (st.extra_regeln, Feld "art"):
+- "sonder" (neu, Standard): Sonderregel NUR fuer diesen Strain. Ersetzt
+  die PASSENDE Normalregel des Produkts (gleicher Modus + Phase, bei
+  Einmalig gleicher Zeitpunkt) - z.B. 10 ml statt 5 ml woechentlich;
+  passt keine Normalregel, wirkt sie zusaetzlich. Andere Normalregeln
+  und andere Strains bleiben unberuehrt.
+- "zusaetzlich" (Altdaten): immer additiv zum Normalplan.
+- "ersetzt" (Altdaten): schaltet den GANZEN Normalplan des Produkts
+  fuer diesen Strain ab.
+
+Push-Einstellungen (erinnerung/-_intervall/-_einheit: einmalig oder
+Intervall bis abgehakt) haengen an JEDER Regel; Altdaten ohne diese
+Felder erben sie vom Produkt.
 
 Phasen-Referenz je Strain: "Ganzer Grow"/"Vegetation" = Strain-Start;
 "Bluete" = Bluete-Start (Photoperiodisch) bzw. Strain-Start (Autoflower).
@@ -68,10 +80,37 @@ def _phase_ende(phase: str, strain_start, bluete_start, autoflower,
     return fallback
 
 
+def _mit_erinnerung(plan: dict, p: dict, eintrag: dict) -> dict:
+    """Push-Einstellungen der Regel in den Termin (Fallback: Produkt)."""
+    return dict(
+        eintrag,
+        erinnerung=(plan.get("erinnerung") or p.get("erinnerung")
+                    or "Einmalig"),
+        erinnerung_intervall=(plan.get("erinnerung_intervall")
+                              or p.get("erinnerung_intervall") or 4),
+        erinnerung_einheit=(plan.get("erinnerung_einheit")
+                            or p.get("erinnerung_einheit") or "Stunden"))
+
+
+def _deckt(sonder: dict, regel: dict) -> bool:
+    """True, wenn die Sonderregel diese Normalregel ersetzt: gleicher
+    Modus + gleiche Phase; bei Einmalig zusaetzlich derselbe Zeitpunkt."""
+    modus = sonder.get("modus", "Einmalig")
+    if (modus != regel.get("modus", "Einmalig")
+            or sonder.get("phase", "Ganzer Grow")
+            != regel.get("phase", "Ganzer Grow")):
+        return False
+    if modus == "Einmalig":
+        return (_tage(sonder.get("wert", 1), sonder.get("einheit", "Tage"))
+                == _tage(regel.get("wert", 1), regel.get("einheit", "Tage")))
+    return True
+
+
 def _plan_termine(plan: dict, p: dict, eintrag: dict, strain_start, ernte,
                   bluete_start, autoflower, von, bis) -> list[dict]:
     """Termine eines Plans (Produkt-Plan ODER Extra-Regel)."""
     out: list[dict] = []
+    eintrag = _mit_erinnerung(plan, p, eintrag)
     form = menge_einheit(p)
     if plan.get("modus") == "Wiederholend":
         phase = plan.get("phase", "Ganzer Grow")
@@ -132,10 +171,15 @@ def termine_fuer_strain(produkte: list, st: dict, autoflower: bool,
                 "strain": st.get("name", "?"),
                 "pid": p.get("id")}
 
-    # "Ersetzt"-Regeln schalten den Normalplan des Produkts fuer diesen
-    # Strain ab (komplett individuelle Angaben statt additiv).
+    # Altdaten: "ersetzt"-Regeln schalten den GANZEN Normalplan des
+    # Produkts fuer diesen Strain ab.
     ersetzt = {r.get("pid") for r in (st.get("extra_regeln") or [])
                if r.get("art") == "ersetzt"}
+    # Sonderregeln je Produkt: ersetzen nur die passende Normalregel.
+    sonder: dict = {}
+    for r in (st.get("extra_regeln") or []):
+        if r.get("art") in (None, "sonder"):
+            sonder.setdefault(r.get("pid"), []).append(r)
 
     # Normaler Plan: direkt verknuepft ODER Hersteller-Methode. Produkte
     # tragen ihre Anwendungs-Regeln als Liste ("regeln"); die Altstruktur
@@ -147,7 +191,9 @@ def termine_fuer_strain(produkte: list, st: dict, autoflower: bool,
                 or (p.get("hersteller") or "").lower() in hlinks):
             continue
         regeln = p.get("regeln")
-        plaene = ([regel_zu_plan(r) for r in regeln] if regeln
+        sk = sonder.get(p.get("id")) or []
+        plaene = ([regel_zu_plan(r) for r in regeln
+                   if not any(_deckt(sr, r) for sr in sk)] if regeln
                   else ([p] if p.get("modus") else []))
         for plan in plaene:
             out.extend(_plan_termine(plan, p, _eintrag(p), strain_start,
@@ -172,6 +218,9 @@ def regel_zu_plan(r: dict) -> dict:
             "phase": r.get("phase", "Ganzer Grow"),
             "intervall": r.get("intervall", 7),
             "menge": r.get("menge"),
+            "erinnerung": r.get("erinnerung"),
+            "erinnerung_intervall": r.get("erinnerung_intervall"),
+            "erinnerung_einheit": r.get("erinnerung_einheit"),
             "punkte": [{"wert": r.get("wert", 1),
                         "einheit": r.get("einheit", "Tage"),
                         "phase": r.get("phase", "Ganzer Grow"),
@@ -188,7 +237,12 @@ def regel_txt(r: dict, einheit_m: str) -> str:
         s = "📅 %s %s (%s)" % (
             "Woche" if r.get("einheit") == "Wochen" else "Tag",
             r.get("wert"), r.get("phase"))
-    return s + ((" · " + m) if m else "")
+    s += (" · " + m) if m else ""
+    if r.get("erinnerung") == "Intervall":
+        s += " · 🔔alle %s %s" % (
+            r.get("erinnerung_intervall", 4),
+            "Tage" if r.get("erinnerung_einheit") == "Tage" else "Std.")
+    return s
 
 
 def alle_termine(produkte: list, strains: list, autoflower: bool,

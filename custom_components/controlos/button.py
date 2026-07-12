@@ -76,7 +76,5 @@ class ControlosButton(ButtonEntity):
             await coord.async_duenger_hersteller_link(True)
         elif self._key == "duenger_h_unlink":
             await coord.async_duenger_hersteller_link(False)
-        elif self._key == "duenger_extra_add":
-            await coord.async_duenger_extra_add()
         elif self._key == "duenger_extra_remove":
             await coord.async_duenger_extra_remove()
