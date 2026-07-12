@@ -21,8 +21,13 @@ import time
 _LOGGER = logging.getLogger(__name__)
 
 FIELDS = ["ts", "temp", "hum", "vpd", "blatt", "co2", "ist_tag",
-          "bef", "ent", "klima", "minute"]
-HORIZONS_MIN = [15, 30, 60, 120]   # Prognose-Horizonte (Minuten)
+          "bef", "ent", "klima", "minute",
+          # Geraete-Detailsignale (2026-07): AC-Kompressor/Fuehler/Aussen/
+          # Luefter, Entfeuchter-Stufe/-Feuchte, Licht/UC/UV (Abwaerme).
+          # Alte Zeilen ohne diese Spalten bekommen Naeherungs-Fallbacks.
+          "kwatt", "k_ist", "k_aussen", "k_fan",
+          "ent_stufe", "ent_hum", "licht", "uc_pct", "uv"]
+HORIZONS_MIN = [5, 15, 30, 60, 120]   # Prognose-Horizonte (Minuten)
 MIN_ROWS = 2000          # ab hier wird trainiert (~17 h Daten)
 MAX_ROWS = 60000         # Trainings-Cap (~3 Wochen bei 30s-Takt)
 RIDGE = 1.0              # L2-Regularisierung
@@ -34,6 +39,7 @@ class KiEngine:
         self.dir = base_dir
         self.slug = slug
         self._buf: list[dict] = []
+        self._migrated: set[str] = set()
         self._lock = threading.Lock()
         self.modelle: dict[int, list[float]] = {}   # Horizont(min) -> Gewichte
         self.mae: dict[int, float] = {}             # Horizont(min) -> MAE
@@ -68,10 +74,43 @@ class KiEngine:
             rows, self._buf = self._buf, []
         self._write(rows)
 
+    def _migrate(self, path: str) -> None:
+        """Bestehende Monatsdatei einmalig auf den aktuellen Header heben.
+
+        Neue Spalten werden leer aufgefuellt (Features nutzen dann ihre
+        Fallback-Naeherungen). Noetig, weil DictReader sonst die neuen
+        Werte am alten Header vorbei ins Leere sortieren wuerde."""
+        if path in self._migrated:
+            return
+        try:
+            with open(path, newline="") as f:
+                first = f.readline().rstrip("\r\n")
+            if first == ",".join(FIELDS):
+                self._migrated.add(path)
+                return
+            with open(path, newline="") as f:
+                alt = list(csv.DictReader(f))
+            tmp = path + ".tmp"
+            with open(tmp, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=FIELDS, restval="",
+                                   extrasaction="ignore")
+                w.writeheader()
+                for r in alt:
+                    r.pop(None, None)
+                    w.writerow(r)
+            os.replace(tmp, path)
+            self._migrated.add(path)
+            _LOGGER.info("KI-Datenlog %s auf neues Spaltenformat migriert "
+                         "(%d Zeilen)", os.path.basename(path), len(alt))
+        except OSError:
+            _LOGGER.exception("KI-Datenlog-Migration")
+
     def _write(self, rows: list[dict]) -> None:
         os.makedirs(self.dir, exist_ok=True)
         path = self._path(time.strftime("%Y-%m"))
         neu = not os.path.exists(path)
+        if not neu:
+            self._migrate(path)
         try:
             with open(path, "a", newline="") as f:
                 w = csv.DictWriter(f, fieldnames=FIELDS)
@@ -97,16 +136,39 @@ class KiEngine:
     def _features(r: dict, slope: float) -> list[float]:
         minute = float(r["minute"])
         ang = 2 * math.pi * minute / 1440.0
+        temp = float(r["temp"])
+        ist_tag = float(r["ist_tag"])
+        klima = float(r["klima"])
+        ent = float(r["ent"])
+
+        def g(key, fallback):
+            """Geraete-Detailspalte lesen; Altbestand -> Naeherung."""
+            try:
+                return float(r.get(key, ""))
+            except (TypeError, ValueError):
+                return fallback
+
+        # AC-Leistung sieht die Kompressorphasen (an/aus-Altdaten: ~300 W)
+        kwatt = g("kwatt", 300.0 * klima)
         return [
             1.0,
             float(r["vpd"]),
-            float(r["temp"]) / 10.0,
+            temp / 10.0,
             float(r["hum"]) / 10.0,
             float(r["co2"] or 0) / 1000.0,
             float(r["blatt"] or r["temp"]) / 10.0,
-            float(r["ist_tag"]),
+            ist_tag,
             math.sin(ang), math.cos(ang),
-            float(r["bef"]), float(r["ent"]), float(r["klima"]),
+            float(r["bef"]), ent, klima,
+            kwatt / 1000.0,
+            g("k_ist", temp) / 10.0,
+            g("k_aussen", temp) / 10.0,
+            g("k_fan", 0.0) / 100.0,
+            g("ent_stufe", ent),
+            g("ent_hum", float(r["hum"])) / 10.0,
+            g("licht", ist_tag),                    # Abwaerme Hauptlicht
+            g("uc_pct", 100.0 * ist_tag) / 100.0,   # Abwaerme Undercanopy
+            g("uv", 0.0),                           # Abwaerme UV
             slope * 10.0,
         ]
 
@@ -272,6 +334,6 @@ class KiEngine:
         return out
 
     def predict(self, row: dict, slope: float) -> float | None:
-        """Kuerzester Horizont (15 min) - Abwaertskompatibilitaet."""
+        """Kuerzester Horizont (jetzt 5 min) - Abwaertskompatibilitaet."""
         kurve = self.predict_curve(row, slope)
         return kurve[0][1] if kurve else None

@@ -516,16 +516,20 @@ class Regler:
             vpd_glatt_anzeige = vpd_g
             ff_txt = ""
             if ctx.sw("ki_vorsteuerung"):
-                prog15 = mae15 = None
+                # 5 min = schnelle Ausbrueche (AC-Kompressor), 15 min =
+                # Trend; beide MAE-gegated, Mittel der brauchbaren.
+                grenze = ctx.num("ki_ff_max_mae", 0.2)
+                deltas = []
                 for p in d.get("_ki_prognose") or []:
-                    if p.get("minuten") == 15:
-                        prog15, mae15 = p.get("vpd"), p.get("mae")
-                        break
-                if (prog15 is not None and 0.1 < prog15 < 4.0
-                        and mae15 is not None
-                        and mae15 <= ctx.num("ki_ff_max_mae", 0.2)):
+                    if p.get("minuten") not in (5, 15):
+                        continue
+                    pv, pm = p.get("vpd"), p.get("mae")
+                    if (pv is not None and 0.1 < pv < 4.0
+                            and pm is not None and pm <= grenze):
+                        deltas.append(pv - vpd_g)
+                if deltas:
                     anteil = ctx.num("ki_ff_staerke", 50.0) / 100.0
-                    delta = max(-0.3, min(0.3, prog15 - vpd_g))
+                    delta = max(-0.3, min(0.3, sum(deltas) / len(deltas)))
                     if abs(anteil * delta) >= 0.005:
                         vpd_g = round(vpd_g + anteil * delta, 3)
                         ff_txt = "→%.2f" % vpd_g

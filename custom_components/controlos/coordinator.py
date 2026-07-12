@@ -876,14 +876,35 @@ class ControlosCoordinator(DataUpdateCoordinator):
             if alt:
                 slope = vpd - alt[-1][1]
             dev_on = {}
+            dev_st = {}
             for key, name in (("geraet_befeuchter", "bef"),
                               ("geraet_entfeuchter", "ent"),
-                              ("geraet_klima", "klima")):
+                              ("geraet_klima", "klima"),
+                              ("geraet_licht", "licht"),
+                              ("geraet_uv", "uv")):
                 eid = ctx.sel(key)
                 st = self.hass.states.get(eid) if eid else None
+                dev_st[name] = st
                 dev_on[name] = 1 if (st is not None and
                                      st.state not in ("off", "unavailable",
                                                       "unknown")) else 0
+
+            # Geraete-Detailsignale: die Physik hinter den Schaltzustaenden
+            # (AC-Kompressorphasen, Entfeuchter-Stufe, Licht-Abwaerme).
+            def fattr(st, name):
+                try:
+                    return round(float(st.attributes.get(name)), 1)
+                except (TypeError, ValueError, AttributeError):
+                    return None
+
+            kst = dev_st["klima"]
+            ent_stufe = None
+            s_eid = ctx.sel("stufe_entfeuchter")
+            sst = self.hass.states.get(s_eid) if s_eid else None
+            if sst is not None:
+                opts = sst.attributes.get("options") or []
+                if sst.state in opts and len(opts) > 1:
+                    ent_stufe = round(opts.index(sst.state) / (len(opts) - 1), 2)
             lt = datetime.now()
             row = {"ts": round(now, 1),
                    "temp": data["data_temp_luft"],
@@ -894,11 +915,23 @@ class ControlosCoordinator(DataUpdateCoordinator):
                    "ist_tag": 1 if data.get("data_ist_tag") else 0,
                    "bef": dev_on["bef"], "ent": dev_on["ent"],
                    "klima": dev_on["klima"],
-                   "minute": lt.hour * 60 + lt.minute}
+                   "minute": lt.hour * 60 + lt.minute,
+                   "kwatt": fattr(kst, "realtime_power"),
+                   "k_ist": fattr(kst, "current_temperature"),
+                   "k_aussen": fattr(kst, "outdoor_temperature"),
+                   "k_fan": fattr(kst, "fan_speed"),
+                   "ent_stufe": ent_stufe,
+                   "ent_hum": ctx.fnum(ctx.sel("sensor_entfeuchter")),
+                   "licht": dev_on["licht"],
+                   "uc_pct": data.get("data_uc_helligkeit"),
+                   "uv": dev_on["uv"]}
             if row["hum"] is not None:
                 await self.hass.async_add_executor_job(self.ki.append, row)
             kurve = self.ki.predict_curve(row, slope)
-            data["ki_vpd_prognose"] = kurve[0][1] if kurve else None
+            # Sensor bleibt die 15-min-Prognose (Horizont 5 steht jetzt vorne)
+            data["ki_vpd_prognose"] = next(
+                (v for m, v in kurve if m == 15),
+                kurve[0][1] if kurve else None)
             basis = dt_util.utcnow()
             data["_ki_prognose"] = [
                 {"minuten": m,
