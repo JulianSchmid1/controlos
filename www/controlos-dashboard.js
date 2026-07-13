@@ -1280,8 +1280,10 @@ function duengerView(a) {
           "**Sonderregel** gilt NUR für den gewählten Strain und ersetzt " +
           "dort die passende Normalregel (gleiche Anwendung + Phase) — " +
           "z. B. 10 ml statt 5 ml wöchentlich. **Kombi-Produkt**: legt " +
-          "dieselbe Regel gleich für ein zweites Produkt mit an (eigene " +
-          "Menge) — z. B. Orgatrex × Bactrex im selben Gießwasser." },
+          "dieselbe Regel gleich für ein zweites Produkt mit an — z. B. " +
+          "Orgatrex × Bactrex im selben Gießwasser. Die Menge gibst du " +
+          "**je Produkt einzeln** an; die Einheit (ml/g) kommt automatisch " +
+          "aus dem jeweiligen Produkt." },
         bsel(sp + "duenger_produkt", "Produkt wählen"),
         bsel(sp + "duenger_produkt_2", "+ Kombi-Produkt (optional)"),
         bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
@@ -1299,10 +1301,17 @@ function duengerView(a) {
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
         V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
-        // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich)
-        bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
-          "mdi:beaker"),
-        V(bstate(np + "duenger_menge_2", "Menge Kombi-Produkt (0 = ohne)",
+        // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich).
+        // Ohne Kombi heisst das Feld schlicht "Menge je Anwendung", mit
+        // Kombi wird klar unterschieden: 1. Produkt / Kombi-Produkt.
+        V(bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
+            "mdi:beaker"),
+          cEq(sp + "duenger_produkt_2", "—")),
+        V(bstate(np + "duenger_menge", "Menge · 1. Produkt (0 = ohne)",
+            "mdi:beaker"),
+          { condition: "state", entity: sp + "duenger_produkt_2",
+            state_not: "—" }),
+        V(bstate(np + "duenger_menge_2", "Menge · Kombi-Produkt (0 = ohne)",
             "mdi:beaker-outline"),
           { condition: "state", entity: sp + "duenger_produkt_2",
             state_not: "—" }),
