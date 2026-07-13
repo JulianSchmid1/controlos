@@ -121,7 +121,11 @@ def _plan_termine(plan: dict, p: dict, eintrag: dict, strain_start, ernte,
         ende = min(bis, _phase_ende(phase, strain_start, bluete_start,
                                     autoflower, ernte, bis))
         mt = menge_txt(plan.get("menge"), form)
-        d = ref
+        # Start "ab Tag/Woche N": Woche/Tag 1 = Referenztag (Altregeln
+        # ohne Feld unveraendert), Woche 2 = ref+7, Tag 5 = ref+4 usw.
+        einheit = plan.get("einheit", "Tage")
+        beginn = _tage(plan.get("start", 1), einheit) - _tage(1, einheit)
+        d = ref + timedelta(days=max(0, beginn))
         while d <= ende:
             if d >= von:
                 out.append(dict(eintrag, datum=d, menge=mt))
@@ -217,6 +221,7 @@ def regel_zu_plan(r: dict) -> dict:
             "einheit": r.get("einheit", "Tage"),
             "phase": r.get("phase", "Ganzer Grow"),
             "intervall": r.get("intervall", 7),
+            "start": r.get("start", 1),
             "menge": r.get("menge"),
             "erinnerung": r.get("erinnerung"),
             "erinnerung_intervall": r.get("erinnerung_intervall"),
@@ -231,8 +236,14 @@ def regel_txt(r: dict, einheit_m: str) -> str:
     """Kurzbeschreibung einer Regel fuer Listen/Selects."""
     m = menge_txt(r.get("menge"), einheit_m)
     if r.get("modus") == "Wiederholend":
-        s = "↻ alle %s %s (%s)" % (r.get("intervall"), r.get("einheit"),
-                                   r.get("phase"))
+        try:
+            start = int(float(r.get("start", 1)))
+        except (TypeError, ValueError):
+            start = 1
+        ab = ("" if start <= 1 else " ab %s %s" % (
+            "Woche" if r.get("einheit") == "Wochen" else "Tag", start))
+        s = "↻ alle %s %s%s (%s)" % (r.get("intervall"), r.get("einheit"),
+                                     ab, r.get("phase"))
     else:
         s = "📅 %s %s (%s)" % (
             "Woche" if r.get("einheit") == "Wochen" else "Tag",
@@ -272,4 +283,33 @@ def termine_gruppiert(termine: list[dict]) -> list[dict]:
             out.append(g)
         elif t["strain"] not in g["strains"]:
             g["strains"].append(t["strain"])
+    return out
+
+
+def termine_kombi(gruppen: list[dict]) -> list[dict]:
+    """Zweite Stufe: Produkte, die am SELBEN Tag fuer DIESELBEN Strains
+    faellig sind (Kombi-Anwendung, z.B. Orgatrex + Bactrex im Giesswasser),
+    werden zu einem Eintrag verschmolzen: produkt = "Orgatrex 5 ml +
+    Bactrex 1 g", menge leer, pids = alle Produkt-IDs."""
+    out: list[dict] = []
+    idx: dict = {}
+    for g in gruppen:
+        key = (g["datum"], tuple(g["strains"]))
+        k = idx.get(key)
+        if k is None:
+            k = dict(g, teile=[dict(g)])
+            idx[key] = k
+            out.append(k)
+        else:
+            k["teile"].append(dict(g))
+    for g in out:
+        g["pids"] = [t["pid"] for t in g["teile"]]
+        if len(g["teile"]) > 1:
+            g["produkt"] = " + ".join(
+                t["produkt"] + ((" " + t["menge"]) if t.get("menge") else "")
+                for t in g["teile"])
+            g["menge"] = ""
+            g["typ"] = " + ".join(dict.fromkeys(
+                (t.get("typ") or t.get("kategorie") or "")
+                for t in g["teile"]))
     return out

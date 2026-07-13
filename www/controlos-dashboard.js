@@ -1279,8 +1279,11 @@ function duengerView(a) {
           "**Normale Regel** gilt für alle verknüpften Strains. " +
           "**Sonderregel** gilt NUR für den gewählten Strain und ersetzt " +
           "dort die passende Normalregel (gleiche Anwendung + Phase) — " +
-          "z. B. 10 ml statt 5 ml wöchentlich." },
+          "z. B. 10 ml statt 5 ml wöchentlich. **Kombi-Produkt**: legt " +
+          "dieselbe Regel gleich für ein zweites Produkt mit an (eigene " +
+          "Menge) — z. B. Orgatrex × Bactrex im selben Gießwasser." },
         bsel(sp + "duenger_produkt", "Produkt wählen"),
+        bsel(sp + "duenger_produkt_2", "+ Kombi-Produkt (optional)"),
         bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
         V(bsel(sp + "duenger_strain", "Strain (für die Sonderregel)"),
           cEq(sp + "duenger_regel_art", "Sonderregel (nur gewählter Strain)")),
@@ -1291,11 +1294,18 @@ function duengerView(a) {
           cEq(sp + "grow_typ", "Photoperiodisch")),
         V(bslider(np + "duenger_zeitpunkt", "Zeitpunkt (Tag-/Wochen-Nr.)"),
           cEq(sp + "duenger_plan_modus", "Einmalig")),
+        // Wiederholend: gleiches Feld = Start "ab Tag/Woche N"
+        V(bslider(np + "duenger_zeitpunkt", "Start ab (Tag-/Wochen-Nr.)"),
+          cEq(sp + "duenger_plan_modus", "Wiederholend")),
         V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
           cEq(sp + "duenger_plan_modus", "Wiederholend")),
         // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich)
         bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
           "mdi:beaker"),
+        V(bstate(np + "duenger_menge_2", "Menge Kombi-Produkt (0 = ohne)",
+            "mdi:beaker-outline"),
+          { condition: "state", entity: sp + "duenger_produkt_2",
+            state_not: "—" }),
         // Push-Verhalten am Anwendungstag: je Regel einstellbar
         bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
         V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),

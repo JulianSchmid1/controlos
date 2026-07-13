@@ -21,7 +21,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .duengerplan import KATEGORIE_ICON, alle_termine, termine_gruppiert
+from .duengerplan import (KATEGORIE_ICON, alle_termine, termine_gruppiert,
+                          termine_kombi)
 from .entity_base import area_slug, device_info_for
 
 
@@ -287,19 +288,22 @@ class ControlosPflegeCalendar(CalendarEntity):
         evs: list[CalendarEvent] = []
         # Gebuendelt: EIN Eintrag je Anwendung (Datum+Produkt+Menge) mit
         # allen Strains; Sonderdosierungen bleiben eigene Eintraege.
-        for t in termine_gruppiert(alle_termine(
+        # Kombi-Stufe: Produkte am selben Tag fuer dieselben Strains
+        # verschmelzen zu "Orgatrex 5 ml + Bactrex 1 g".
+        for t in termine_kombi(termine_gruppiert(alle_termine(
                 store.duenger_produkte(),
                 store.strains(self._entry.entry_id),
                 typ == "Autoflowering", bstart,
                 heute - timedelta(days=30),
-                heute + timedelta(days=120))):
+                heute + timedelta(days=120)))):
             icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
             merks = [merker.get("dg|%s|%s|%s" % (
-                t["pid"], s, t["datum"].isoformat()))
+                pid, s, t["datum"].isoformat()))
+                for pid in (t.get("pids") or [t["pid"]])
                 for s in t["strains"]]
             if merks and all(isinstance(m, dict) and m.get("uid") in erledigt
                              for m in merks):
-                icon = "✅"   # fuer ALLE Strains abgehakt
+                icon = "✅"   # fuer ALLE Produkte + Strains abgehakt
             m = t.get("menge") or ""
             evs.append(CalendarEvent(
                 start=t["datum"], end=t["datum"] + timedelta(days=1),

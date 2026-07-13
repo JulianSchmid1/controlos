@@ -170,6 +170,7 @@ NUMBER_PARAMS = {
     "duenger_intervall": {"name": "Wiederholen alle", "min": 1, "max": 60, "step": 1, "unit": "", "icon": "mdi:repeat", "default": 7},
     "duenger_erinnerung_intervall": {"name": "Erinnern alle", "min": 1, "max": 48, "step": 1, "unit": "", "icon": "mdi:bell-ring", "default": 4},
     "duenger_menge": {"name": "Menge je Anwendung", "min": 0, "max": 1000, "step": 0.5, "unit": "", "icon": "mdi:beaker", "default": 0},
+    "duenger_menge_2": {"name": "Menge Kombi-Produkt", "min": 0, "max": 1000, "step": 0.5, "unit": "", "icon": "mdi:beaker-outline", "default": 0},
     # -- KI-Bias (adaptiver Setpoint-Shift) --
     "vpd_bias_tag":   {"name": "VPD-Bias Tag",   "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},
     "vpd_bias_nacht": {"name": "VPD-Bias Nacht", "min": -0.5, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:brain", "default": 0},

@@ -35,6 +35,8 @@ async def async_setup_entry(
     ents.append(StrainSelect(entry))
     ents.append(DuengerTypSelect(entry))
     ents.append(DuengerProduktSelect(entry))
+    ents.append(DuengerProduktSelect(
+        entry, "duenger_produkt_2", "Kombi-Produkt (optional)", True))
     ents.append(DuengerStrainSelect(entry))
     ents.append(DuengerHerstellerSelect(entry))
     ents.append(DuengerExtraSelect(entry))
@@ -244,12 +246,16 @@ class DuengerTypSelect(ControlosBaseEntity, SelectEntity):
 
 
 class DuengerProduktSelect(ControlosBaseEntity, SelectEntity):
-    """Auswahl eines angelegten Duengeplan-Produkts (global)."""
+    """Auswahl eines angelegten Duengeplan-Produkts (global). Mit
+    leer=True gibt es zusaetzlich die Abwahl-Option "—" (kein Produkt) -
+    genutzt fuer das optionale Kombi-Produkt im Regel-Formular."""
 
-    def __init__(self, entry: ConfigEntry):
-        super().__init__(entry, "duenger_produkt",
-                         {"name": "Produkt (Auswahl)",
-                          "icon": "mdi:bottle-tonic-outline"}, "select")
+    def __init__(self, entry: ConfigEntry, key: str = "duenger_produkt",
+                 name: str = "Produkt (Auswahl)", leer: bool = False):
+        super().__init__(entry, key,
+                         {"name": name, "icon": "mdi:bottle-tonic-outline"},
+                         "select")
+        self._leer = leer
         self._attr_options = ["—"]
         self._attr_current_option = "—"
 
@@ -261,7 +267,7 @@ class DuengerProduktSelect(ControlosBaseEntity, SelectEntity):
         prod = store.duenger_produkte() if store else []
         opts = ["%d. %s" % (i + 1, p.get("name") or "?")
                 for i, p in enumerate(prod)]
-        return opts or ["—"]
+        return (["—"] + opts) if self._leer else (opts or ["—"])
 
     def refresh_options(self) -> None:
         new = self._compute()
@@ -283,7 +289,7 @@ class DuengerProduktSelect(ControlosBaseEntity, SelectEntity):
             self.async_write_ha_state()
 
     def selected_id(self) -> str | None:
-        """Produkt-ID der aktuellen Auswahl (None wenn keine)."""
+        """Produkt-ID der aktuellen Auswahl (None wenn keine/"—")."""
         store = self._store()
         if not store:
             return None
@@ -292,6 +298,8 @@ class DuengerProduktSelect(ControlosBaseEntity, SelectEntity):
             idx = self._attr_options.index(self._attr_current_option)
         except ValueError:
             return None
+        if self._leer:
+            idx -= 1   # Option "—" davor
         return prod[idx].get("id") if 0 <= idx < len(prod) else None
 
 

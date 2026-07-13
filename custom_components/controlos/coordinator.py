@@ -24,7 +24,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
 from .duengerplan import (KATEGORIE_ICON, alle_termine, menge_einheit,
-                          menge_txt, regel_txt, termine_gruppiert)
+                          menge_txt, regel_txt, termine_gruppiert,
+                          termine_kombi)
 from .entity_base import area_slug
 from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
@@ -486,13 +487,14 @@ class ControlosCoordinator(DataUpdateCoordinator):
                      if r.get("pid") == p.get("id")]}
                 for p in produkte]
             # Anzeige-Liste: gleiche Anwendung ueber mehrere Strains
-            # gebuendelt (Sonderdosierung = eigene Zeile, andere Menge)
+            # gebuendelt (Sonderdosierung = eigene Zeile, andere Menge);
+            # Produkte am selben Tag fuer dieselben Strains = Kombi-Zeile
             data["_duenger_termine"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": ", ".join(t["strains"]),
                  "kategorie": t["kategorie"],
                  "typ": t["typ"], "menge": t.get("menge") or ""}
-                for t in termine_gruppiert(termine)[:40]]
+                for t in termine_kombi(termine_gruppiert(termine))[:40]]
             data["_duenger_heute"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": t["strain"], "kategorie": t["kategorie"],
@@ -1381,9 +1383,10 @@ class ControlosCoordinator(DataUpdateCoordinator):
                       .startswith("Trocken") else "Flüssig"),
              "menge_einheit": ctx.sel_raw("duenger_menge_einheit") or "ml"}
         store.add_duenger_produkt(p)
-        sel = ents.get("duenger_produkt")
-        if sel is not None:
-            sel.refresh_options()
+        for k in ("duenger_produkt", "duenger_produkt_2"):
+            sel = ents.get(k)
+            if sel is not None:
+                sel.refresh_options()
         if name_ent is not None:
             await name_ent.async_set_value("")
         await self.async_request_refresh()
@@ -1393,6 +1396,8 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 "einheit": ctx.sel_raw("duenger_zeiteinheit") or "Wochen",
                 "phase": ctx.sel_raw("duenger_phase") or "Ganzer Grow",
                 "wert": int(ctx.num("duenger_zeitpunkt", 1)),
+                # Wiederholend: Start "ab Tag/Woche N" (gleiches Feld)
+                "start": int(ctx.num("duenger_zeitpunkt", 1)),
                 "intervall": int(ctx.num("duenger_intervall", 7)),
                 "menge": ctx.num("duenger_menge", 0),
                 # Push-Verhalten haengt an der Regel (nicht am Produkt)
@@ -1407,7 +1412,9 @@ class ControlosCoordinator(DataUpdateCoordinator):
     async def async_duenger_regel_add(self) -> None:
         """EIN Regel-Formular: 'Normale Regel' -> Anwendungs-Regel am
         Produkt (alle verknuepften Strains); 'Sonderregel' -> nur der
-        gewaehlte Strain, ersetzt dort die passende Normalregel."""
+        gewaehlte Strain, ersetzt dort die passende Normalregel.
+        Optionales Kombi-Produkt: dieselbe Regel wird zusaetzlich beim
+        zweiten Produkt angelegt (eigene Menge), z.B. Orgatrex x Bactrex."""
         store = self._store()
         ents = self._ents()
         ctx = _Ctx(self.hass, ents)
@@ -1415,19 +1422,28 @@ class ControlosCoordinator(DataUpdateCoordinator):
         pid = sel.selected_id() if sel is not None else None
         if store is None or not pid:
             return
+        regel = self._regel_aus_formular(ctx)
+        ziele = [(pid, regel)]
+        sel2 = ents.get("duenger_produkt_2")
+        pid2 = sel2.selected_id() if sel2 is not None else None
+        if pid2 and pid2 != pid:
+            ziele.append((pid2, dict(
+                regel, menge=ctx.num("duenger_menge_2", 0))))
         art = ctx.sel_raw("duenger_regel_art") or ""
         if art.startswith("Sonderregel"):
             ssel = ents.get("duenger_strain")
             idx = ssel.selected_index() if ssel is not None else -1
             if idx < 0:
                 return
-            store.strain_extra_add(self.entry.entry_id, idx, dict(
-                self._regel_aus_formular(ctx), pid=pid, art="sonder"))
+            for zpid, r in ziele:
+                store.strain_extra_add(self.entry.entry_id, idx,
+                                       dict(r, pid=zpid, art="sonder"))
             esel = ents.get("duenger_extra_sel")
             if esel is not None:
                 esel.refresh_options()
         else:
-            store.add_produkt_regel(pid, self._regel_aus_formular(ctx))
+            for zpid, r in ziele:
+                store.add_produkt_regel(zpid, r)
             rsel = ents.get("duenger_regel_sel")
             if rsel is not None:
                 rsel.refresh_options()
@@ -1454,7 +1470,10 @@ class ControlosCoordinator(DataUpdateCoordinator):
         if store is None or not pid:
             return
         store.remove_duenger_produkt(pid)
-        sel.refresh_options()
+        for k in ("duenger_produkt", "duenger_produkt_2"):
+            s2 = ents.get(k)
+            if s2 is not None:
+                s2.refresh_options()
         await self.async_request_refresh()
 
     async def async_duenger_link(self, verbinden: bool) -> None:
