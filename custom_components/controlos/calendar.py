@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .duengerplan import KATEGORIE_ICON, alle_termine
+from .duengerplan import KATEGORIE_ICON, alle_termine, termine_gruppiert
 from .entity_base import area_slug, device_info_for
 
 
@@ -285,23 +285,27 @@ class ControlosPflegeCalendar(CalendarEntity):
                     if t.get("status") == "completed"}
         merker = store.duenger_erinnert_alle()
         evs: list[CalendarEvent] = []
-        for t in alle_termine(store.duenger_produkte(),
-                              store.strains(self._entry.entry_id),
-                              typ == "Autoflowering", bstart,
-                              heute - timedelta(days=30),
-                              heute + timedelta(days=120)):
+        # Gebuendelt: EIN Eintrag je Anwendung (Datum+Produkt+Menge) mit
+        # allen Strains; Sonderdosierungen bleiben eigene Eintraege.
+        for t in termine_gruppiert(alle_termine(
+                store.duenger_produkte(),
+                store.strains(self._entry.entry_id),
+                typ == "Autoflowering", bstart,
+                heute - timedelta(days=30),
+                heute + timedelta(days=120))):
             icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
-            key = "dg|%s|%s|%s" % (t["pid"], t["strain"],
-                                   t["datum"].isoformat())
-            merk = merker.get(key)
-            if (isinstance(merk, dict) and merk.get("uid") in erledigt):
-                icon = "✅"
+            merks = [merker.get("dg|%s|%s|%s" % (
+                t["pid"], s, t["datum"].isoformat()))
+                for s in t["strains"]]
+            if merks and all(isinstance(m, dict) and m.get("uid") in erledigt
+                             for m in merks):
+                icon = "✅"   # fuer ALLE Strains abgehakt
             m = t.get("menge") or ""
             evs.append(CalendarEvent(
                 start=t["datum"], end=t["datum"] + timedelta(days=1),
                 summary="%s %s%s – %s" % (
                     icon, t["produkt"], (" " + m) if m else "",
-                    t["strain"]),
+                    ", ".join(t["strains"])),
                 description=(t.get("typ") or t["kategorie"])))
         evs.sort(key=lambda e: e.start)
         return evs

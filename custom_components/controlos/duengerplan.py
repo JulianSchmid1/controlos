@@ -253,3 +253,23 @@ def alle_termine(produkte: list, strains: list, autoflower: bool,
                                        bluete_start, von, bis))
     out.sort(key=lambda t: t["datum"])
     return out
+
+
+def termine_gruppiert(termine: list[dict]) -> list[dict]:
+    """Gleiche Anwendung (Datum + Produkt + Menge) ueber mehrere Strains
+    zu EINEM Eintrag buendeln - Strains gesammelt statt je Strain eine
+    Zeile. Sonderdosierungen haben eine andere Menge und bleiben dadurch
+    automatisch eigene Eintraege. Ergebnis-Dicts tragen "strains" (Liste)
+    statt "strain"."""
+    out: list[dict] = []
+    gruppen: dict = {}
+    for t in termine:
+        key = (t["datum"], t.get("pid"), t.get("menge") or "")
+        g = gruppen.get(key)
+        if g is None:
+            g = dict(t, strains=[t["strain"]])
+            gruppen[key] = g
+            out.append(g)
+        elif t["strain"] not in g["strains"]:
+            g["strains"].append(t["strain"])
+    return out

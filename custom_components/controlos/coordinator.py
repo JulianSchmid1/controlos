@@ -24,7 +24,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (DOMAIN, MQTT_BROKER_ADDON, MQTT_RESTART_COOLDOWN_S,
                     PHASE_KEYS, UPDATE_INTERVAL)
 from .duengerplan import (KATEGORIE_ICON, alle_termine, menge_einheit,
-                          menge_txt, regel_txt)
+                          menge_txt, regel_txt, termine_gruppiert)
 from .entity_base import area_slug
 from .ki import MIN_ROWS as KI_MIN_ROWS, KiEngine
 from .regelung import Regler
@@ -475,13 +475,24 @@ class ControlosCoordinator(DataUpdateCoordinator):
                  "regeln": [regel_txt(r, menge_einheit(p))
                             for r in (p.get("regeln") or [])],
                  "strains": [s.get("name") for s in data["_strains"]
-                             if _gilt(p, s)]}
+                             if _gilt(p, s)],
+                 # Sonderregeln je Strain (eigene Dosierung) einzeln zeigen
+                 "sonder": ["%s: %s%s" % (
+                     s.get("name"), regel_txt(r, menge_einheit(p)),
+                     {"ersetzt": " · ersetzt ganzen Plan",
+                      "zusaetzlich": " · zusätzlich"}.get(r.get("art"), ""))
+                     for s in data["_strains"]
+                     for r in (s.get("extra_regeln") or [])
+                     if r.get("pid") == p.get("id")]}
                 for p in produkte]
+            # Anzeige-Liste: gleiche Anwendung ueber mehrere Strains
+            # gebuendelt (Sonderdosierung = eigene Zeile, andere Menge)
             data["_duenger_termine"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
-                 "strain": t["strain"], "kategorie": t["kategorie"],
+                 "strain": ", ".join(t["strains"]),
+                 "kategorie": t["kategorie"],
                  "typ": t["typ"], "menge": t.get("menge") or ""}
-                for t in termine[:40]]
+                for t in termine_gruppiert(termine)[:40]]
             data["_duenger_heute"] = [
                 {"datum": t["datum"].isoformat(), "produkt": t["produkt"],
                  "strain": t["strain"], "kategorie": t["kategorie"],
@@ -771,16 +782,19 @@ class ControlosCoordinator(DataUpdateCoordinator):
                 m = t.get("menge") or ""
                 return t["produkt"] + ((" " + m) if m else "")
 
-            async def _pflege_push(key, t, zusatz=""):
+            async def _pflege_push(key, t, strains, zusatz=""):
                 icon = KATEGORIE_ICON.get(t["kategorie"], "💧")
                 await melde(
                     key, "%s ControlOS: %s anwenden" % (icon, _mit_menge(t)),
                     "[%s] Fällig: %s (%s) für %s.%s" % (
                         name, _mit_menge(t),
-                        t.get("typ") or t["kategorie"], t["strain"], zusatz),
+                        t.get("typ") or t["kategorie"], strains, zusatz),
                     cooldown=0)
 
-            # 1) Heute faellige Termine: Notiz-Eintrag anlegen + erste Meldung
+            # 1) Heute faellige Termine: Notiz-Eintrag anlegen (je Strain
+            #    abhakbar) + erste Meldung. Push gebuendelt: EINE Meldung
+            #    je Produkt+Menge mit allen betroffenen Strains.
+            push_gruppen: dict = {}
             for t in data.get("_duenger_heute") or []:
                 key = "dg|%s|%s|%s" % (t["pid"], t["strain"], t["datum"])
                 merk = store.duenger_erinnert(key)
@@ -814,9 +828,18 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     merk["erinnerung_einheit"] = t.get(
                         "erinnerung_einheit") or "Stunden"
                 if ctx.sw("notify_duenger") and not merk.get("gemeldet"):
-                    await _pflege_push(key, t)
+                    g = push_gruppen.setdefault(
+                        (t["pid"], t.get("menge") or ""),
+                        dict(t, strains=[]))
+                    g["strains"].append(t["strain"])
                     merk["gemeldet"] = jetzt_dt.isoformat()
                 store.set_duenger_erinnert(key, merk)
+
+            for g in push_gruppen.values():
+                await _pflege_push(
+                    "dg|%s|%s|%s" % (g["pid"], g.get("menge") or "",
+                                     g["datum"]),
+                    g, ", ".join(g["strains"]))
 
             if todos_neu:
                 store.set_todos(self.entry.entry_id, todos2)
@@ -825,10 +848,12 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     todo_ent.async_write_ha_state()
 
             # 2) Intervall-Erinnerungen: offene Pflege-Eintraege wiederholt
-            #    melden, bis sie abgehakt (oder geloescht) sind
+            #    melden, bis sie abgehakt (oder geloescht) sind. Auch hier
+            #    gebuendelt: gleichzeitig faellige Strains in EINER Meldung.
             if ctx.sw("notify_duenger"):
                 offen = {x.get("uid"): x for x in todos2
                          if x.get("status") != "completed"}
+                wieder_gruppen: dict = {}
                 for key, merk in store.duenger_erinnert_alle().items():
                     if not (isinstance(merk, dict) and merk.get("uid")):
                         continue
@@ -854,14 +879,22 @@ class ControlosCoordinator(DataUpdateCoordinator):
                     except (TypeError, ValueError):
                         wieder = True
                     if wieder:
-                        t = {"produkt": merk.get("produkt", "?"),
-                             "strain": merk.get("strain", "?"),
+                        g = wieder_gruppen.setdefault(
+                            (merk.get("pid"), merk.get("menge", "")),
+                            {"produkt": merk.get("produkt", "?"),
                              "kategorie": merk.get("kategorie", "Dünger"),
                              "typ": merk.get("typ"),
-                             "menge": merk.get("menge", "")}
-                        await _pflege_push(key, t, " (bis abgehakt)")
-                        merk = dict(merk, gemeldet=jetzt_dt.isoformat())
-                        store.set_duenger_erinnert(key, merk)
+                             "menge": merk.get("menge", ""),
+                             "strains": [], "merker": []})
+                        g["strains"].append(merk.get("strain", "?"))
+                        g["merker"].append((key, merk))
+                for g in wieder_gruppen.values():
+                    await _pflege_push(
+                        "dgw|%s|%s" % (g["produkt"], g["menge"]),
+                        g, ", ".join(g["strains"]), " (bis abgehakt)")
+                    for key, merk in g["merker"]:
+                        store.set_duenger_erinnert(
+                            key, dict(merk, gemeldet=jetzt_dt.isoformat()))
 
     # ------------------------------------------------------------------
     async def _ki_tick(self, ctx, data) -> None:

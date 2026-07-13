@@ -1214,42 +1214,53 @@ function duengerView(a) {
   const wp = "switch.controlos_" + s + "_";
   const cEq = (e, st) => ({ condition: "state", entity: e, state: st });
   const V = (c, ...conds) => Object.assign(c, { visibility: conds });
+  // Produkt-Uebersicht: Regeln + verknuepfte Strains GESAMMELT je Produkt;
+  // nur Sonderregeln (eigene Dosierung) nennen ihren Strain einzeln.
   const produktListe =
     "{% set dp = state_attr('" + G + "grow_tag','duengerplan') or [] %}\n" +
     "{% if dp %}{% for p in dp %}" +
-    "- **{{ p.name }}**{% if p.hersteller %} · {{ p.hersteller }}{% endif %}" +
+    "**{{ p.name }}**{% if p.hersteller %} · {{ p.hersteller }}{% endif %}" +
     " — {{ p.typ or p.kategorie }} ({{ p.form }})\n" +
-    "{% for r in p.regeln %}  - {{ r }}\n{% endfor %}" +
-    "  - {% if p.strains %}🔗 {{ p.strains | join(', ') }}" +
-    "{% else %}_nicht verknüpft_{% endif %}" +
-    "{% if not p.regeln %} · ⚠️ _noch keine Regel_{% endif %}\n" +
-    "{% endfor %}{% else %}_Noch keine Produkte angelegt._{% endif %}";
+    "{% if p.strains %}🔗 _gilt für: {{ p.strains | join(', ') }}_\n" +
+    "{% else %}🔗 _nicht verknüpft_\n{% endif %}" +
+    "{% for r in p.regeln %}- {{ r }}\n{% endfor %}" +
+    "{% if not p.regeln %}- ⚠️ _noch keine Regel_\n{% endif %}" +
+    "{% for s in p.sonder %}- ⭐ {{ s }}\n{% endfor %}" +
+    "\n{% endfor %}{% else %}_Noch keine Produkte angelegt._{% endif %}";
+  // Termine gebuendelt: eine Zeile je Anwendung, Strains gesammelt
   const terminListe =
     "{% set tt = state_attr('" + G + "grow_tag','duenger_termine') or [] %}\n" +
     "{% if tt %}{% for t in tt[:14] %}" +
     "- **{{ as_datetime(t.datum).strftime('%d.%m.') }}** {{ t.produkt }}" +
-    "{% if t.menge %} {{ t.menge }}{% endif %}" +
+    "{% if t.menge %} **{{ t.menge }}**{% endif %}" +
     " → {{ t.strain }}\n" +
     "{% endfor %}{% else %}_Keine anstehenden Termine (Produkte anlegen und " +
     "mit Strains verknüpfen)._{% endif %}";
   return { title: a.title + " · Pflanzenpflege", path: "bereich-" + s + "-duenger",
     icon: "mdi:bottle-tonic", subview: true, theme: THEME,
     type: "sections", max_columns: 3, sections: [
+      // Reihe 1: Kalender (breit) + kompakte Terminliste daneben.
       // Alle Pflege-Termine als eigener Kalender (Balkenansicht im Monat);
       // im Grow-Kalender erscheint Pflege nur noch als Erinnerungs-Notiz.
-      { type: "grid", column_span: 3, cards: [
+      { type: "grid", column_span: 2, cards: [
         sep("Pflege-Kalender", "mdi:watering-can"),
         { type: "calendar", initial_view: "dayGridMonth",
           entities: ["calendar.controlos_" + s + "_pflege"],
           grid_options: { columns: "full", rows: 10 } },
       ] },
       { type: "grid", cards: [
-        sep("Hersteller", "mdi:factory"),
-        // Einmal anlegen, danach nur noch auswaehlen
+        sep("Nächste Termine", "mdi:calendar-clock"),
+        { type: "markdown", content: terminListe },
+        bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),
+      ] },
+      // Reihe 2: Produkte | Regel-Formular | Strain-Verknuepfung
+      { type: "grid", cards: [
+        sep("Produkte", "mdi:bottle-tonic"),
+        { type: "markdown", content: produktListe },
+        sep("Neues Produkt", "mdi:plus-circle"),
         bstate("text.controlos_" + s + "_duenger_hersteller",
           "Neuer Hersteller (tippen zum Eingeben)", "mdi:factory"),
         bbtn(bp + "duenger_hersteller_neu", "Hersteller anlegen", "mdi:factory"),
-        sep("Produkt anlegen", "mdi:plus-circle"),
         bsel(sp + "duenger_hersteller_sel", "Hersteller wählen"),
         bstate("text.controlos_" + s + "_duenger_name",
           "Produktname (tippen zum Eingeben)", "mdi:bottle-tonic"),
@@ -1258,17 +1269,17 @@ function duengerView(a) {
         bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
         bsel(sp + "duenger_menge_einheit", "Mengen-Einheit"),
         bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
-        { type: "markdown", content: produktListe },
-        bbtn(bp + "duenger_entfernen", "Gewähltes Produkt entfernen", "mdi:minus-circle"),
+        bbtn(bp + "duenger_entfernen",
+          "Gewähltes Produkt entfernen (Auswahl im Regel-Formular)",
+          "mdi:minus-circle"),
       ] },
       { type: "grid", cards: [
-        sep("Anwendungs-Regeln", "mdi:calendar-multiselect"),
+        sep("Regel anlegen", "mdi:calendar-multiselect"),
         { type: "markdown", content:
-          "EIN Formular für alles: **Normale Regel** gilt für alle " +
-          "verknüpften Strains. **Sonderregel** gilt NUR für den gewählten " +
-          "Strain und **ersetzt** dort die passende Normalregel (gleiche " +
-          "Anwendung + Phase, bei „Einmalig\" gleicher Zeitpunkt) — z. B. " +
-          "10 ml statt 5 ml wöchentlich; passt keine, wirkt sie zusätzlich." },
+          "**Normale Regel** gilt für alle verknüpften Strains. " +
+          "**Sonderregel** gilt NUR für den gewählten Strain und ersetzt " +
+          "dort die passende Normalregel (gleiche Anwendung + Phase) — " +
+          "z. B. 10 ml statt 5 ml wöchentlich." },
         bsel(sp + "duenger_produkt", "Produkt wählen"),
         bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
         V(bsel(sp + "duenger_strain", "Strain (für die Sonderregel)"),
@@ -1292,7 +1303,7 @@ function duengerView(a) {
         V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
           cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
         bbtn(bp + "duenger_regel_add", "Regel hinzufügen", "mdi:calendar-plus"),
-        sep("Regeln entfernen", "mdi:calendar-minus"),
+        sep("Regel entfernen", "mdi:calendar-minus"),
         bsel(sp + "duenger_regel_sel", "Normale Regel (zum Entfernen)"),
         bbtn(bp + "duenger_regel_remove", "Gewählte Regel entfernen", "mdi:calendar-minus"),
         bsel(sp + "duenger_extra_sel", "Sonderregel des gewählten Strains"),
@@ -1310,9 +1321,6 @@ function duengerView(a) {
         bsel(sp + "duenger_hersteller_sel", "Hersteller (Methode)"),
         bbtn(bp + "duenger_h_link", "Hersteller-Methode verknüpfen", "mdi:factory"),
         bbtn(bp + "duenger_h_unlink", "Hersteller-Methode trennen", "mdi:link-variant-off"),
-        sep("Nächste Termine", "mdi:calendar-clock"),
-        { type: "markdown", content: terminListe },
-        bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),
       ] },
     ] };
 }
