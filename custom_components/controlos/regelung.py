@@ -536,10 +536,22 @@ class Regler:
             nz = max(0.02, vpd_tol / 8.0)
             lo_perf = (vpd_min + vpd_ziel) / 2.0
             hi_perf = (vpd_ziel + vpd_max) / 2.0
-            ent_on = (self.latch("ent", vpd_g <= lo_perf, vpd_g >= lo_perf + nz,
+            # Asymmetrisch: ANSCHALTEN auf dem geglaetteten VPD (nachhaltig zu
+            # feucht -> kein Fehltrigger durch kurze AC-Kompressor-Dips),
+            # ABSCHALTEN, sobald der ROHwert die Zielzone erreicht. Sonst
+            # hinkt der 5-min-Schnitt beim schnellen Hochlaufen nach und der
+            # (kraeftige) Entfeuchter trocknet minutenlang weiter -> VPD
+            # ueberschiesst auf 1,7-1,9. on_cond fordert BEIDE (glatt+roh)
+            # unter lo_perf, damit die AUS-Flanke auf dem Rohwert die AN-
+            # Bedingung sicher aussticht (Latch: beide wahr -> haelt).
+            ent_on = (self.latch("ent",
+                                 vpd_g <= lo_perf and vpd <= lo_perf,
+                                 vpd >= lo_perf + nz,
                                  min_s=entf_min_s)
                       if ent_da else self.latch("ent", False, True))
-            bef_on = (self.latch("bef", vpd_g >= hi_perf, vpd_g <= hi_perf - nz)
+            bef_on = (self.latch("bef",
+                                 vpd_g >= hi_perf and vpd >= hi_perf,
+                                 vpd <= hi_perf - nz)
                       if bef_da else self.latch("bef", False, True))
             if bef_on and ent_on:  # Latch-Uebergang: nie beide gleichzeitig
                 if vpd_g >= vpd_ziel:
