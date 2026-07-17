@@ -22,6 +22,11 @@ class Regler:
         self.name = name
         self._latch: dict = {}
         self._last_sw: dict = {}
+        # Overshoot-Lernen: VPD-Nachlauf nach Entfeuchter-AUS beobachten
+        self._os_prev = False
+        self._os_start = 0.0
+        self._os_v0 = 0.0
+        self._os_peak = 0.0
 
     # ------------------------------------------------------------------
     def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
@@ -141,6 +146,41 @@ class Regler:
         period = max(1, int(intervall_min * 60))
         on_dur = max(0, int(ein_min * 60))
         return (int(time.time()) % period) < on_dur
+
+    # ------------------------------------------------------------------
+    def overshoot_lernen(self, ctx, vpd, ent_on, aktiv, bias_out):
+        """VPD-Nachlauf des Entfeuchters lernen (wie AC-Infinity-'AI').
+
+        Nach jeder AUS-Flanke wird die VPD-Spitze der naechsten 10 min
+        beobachtet; die Differenz Spitze-Abschaltwert fliesst als EMA in
+        die Number 'ent_overshoot' (persistiert wie der Bias). Die
+        Abschaltschwelle wird um diesen Betrag vorgezogen - der Regler
+        landet damit auf dem Ziel statt drueber. aktiv=False (kein
+        VPD-Modus / kein Geraet) verwirft ein offenes Fenster."""
+        now = time.time()
+        if not aktiv or vpd is None:
+            self._os_start = 0.0
+            self._os_prev = bool(ent_on)
+            return
+        if self._os_prev and not ent_on:
+            self._os_start, self._os_v0, self._os_peak = now, vpd, vpd
+        elif not ent_on and self._os_start:
+            if vpd > self._os_peak:
+                self._os_peak = vpd
+            if now - self._os_start >= 600:
+                self._os_merken(ctx, bias_out)
+        elif ent_on and self._os_start:
+            # naechster Lauf beginnt -> Fenster vorzeitig abschliessen
+            self._os_merken(ctx, bias_out)
+        self._os_prev = bool(ent_on)
+
+    def _os_merken(self, ctx, bias_out):
+        delta = max(0.0, self._os_peak - self._os_v0)
+        alt = ctx.num("ent_overshoot", 0.0)
+        neu = round(min(0.25, 0.7 * alt + 0.3 * delta), 3)
+        if abs(neu - alt) > 0.001:
+            bias_out["ent_overshoot"] = neu
+        self._os_start = 0.0
 
     # ------------------------------------------------------------------
     def ki_bias(self, ctx, eff_modus, ist_tag, sys_modus, tank_voll,
@@ -544,9 +584,19 @@ class Regler:
             # ueberschiesst auf 1,7-1,9. on_cond fordert BEIDE (glatt+roh)
             # unter lo_perf, damit die AUS-Flanke auf dem Rohwert die AN-
             # Bedingung sicher aussticht (Latch: beide wahr -> haelt).
+            # Overshoot-Kompensation: gelernter Nachlauf zieht die
+            # Abschaltschwelle vor - der VPD landet nach dem Nachschiessen
+            # auf der Schwelle statt 0,2-0,4 darueber. AN- und AUS-Zone
+            # sind per nz getrennt (sonst haelt der Latch bei Ueberlappung
+            # den laufenden Zustand und neutralisiert die Kompensation);
+            # ein neuer Lauf startet damit erst, wenn genug Abstand fuer
+            # den Nachlauf da ist. os_delta=0 = altes Verhalten.
+            os_delta = (ctx.num("ent_overshoot", 0.0)
+                        if ctx.sw("overshoot_komp") else 0.0)
+            ent_aus = lo_perf + nz - os_delta
             ent_on = (self.latch("ent",
-                                 vpd_g <= lo_perf and vpd <= lo_perf,
-                                 vpd >= lo_perf + nz,
+                                 vpd_g <= lo_perf and vpd <= ent_aus - nz,
+                                 vpd >= ent_aus,
                                  min_s=entf_min_s)
                       if ent_da else self.latch("ent", False, True))
             bef_on = (self.latch("bef",
@@ -603,6 +653,11 @@ class Regler:
 
         if tank_voll:
             ent_on = False
+
+        # Entfeuchter-Nachlauf lernen (nur VPD-Modus, Geraet da, kein Tank)
+        self.overshoot_lernen(ctx, vpd, ent_on,
+                              eff_modus == "VPD" and ent_da and not tank_voll,
+                              bias_out)
 
         # -- Temperatur --
         if temp is not None:

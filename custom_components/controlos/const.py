@@ -181,6 +181,8 @@ NUMBER_PARAMS = {
     # -- KI-Vorsteuerung (Prognose-Lead auf das VPD-Regelsignal) --
     "ki_ff_staerke": {"name": "KI-Vorsteuerung Stärke", "min": 0, "max": 100, "step": 5, "unit": "%", "icon": "mdi:sine-wave", "default": 50},
     "ki_ff_max_mae": {"name": "KI-Vorsteuerung MAE-Grenze", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:target-variant", "default": 0.2},
+    # -- Entfeuchter-Overshoot (gelernter VPD-Nachlauf nach dem Abschalten) --
+    "ent_overshoot": {"name": "Entfeuchter-Nachlauf (gelernt)", "min": 0, "max": 0.3, "step": 0.005, "unit": "kPa", "icon": "mdi:chart-bell-curve", "default": 0},
     # -- Klima-Steuerung --
     "klima_ziel_tag":   {"name": "AC-Ziel Tag",   "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 24},
     "klima_ziel_nacht": {"name": "AC-Ziel Nacht", "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 22},
@@ -234,6 +236,7 @@ SWITCH_PARAMS = {
     "ki_engine":      {"name": "Echte KI (Datensammlung + Prognose)", "icon": "mdi:brain", "default": False},
     "ki_modus":       {"name": "KI-Bias (adaptiver Setpoint)", "icon": "mdi:auto-fix", "default": False},
     "ki_vorsteuerung": {"name": "KI-Vorsteuerung (Prognose dämpft Schwingungen)", "icon": "mdi:chart-timeline-variant-shimmer", "default": False},
+    "overshoot_komp": {"name": "Entfeuchter-Nachlauf kompensieren (lernt Overshoot)", "icon": "mdi:chart-bell-curve-cumulative", "default": False},
     "mqtt_watchdog":  {"name": "MQTT-Watchdog (Broker-Neustart bei Sensor-Ausfall)", "icon": "mdi:restart-alert", "default": True},
     "benachrichtigungen": {"name": "Benachrichtigungen", "icon": "mdi:bell", "default": True},
     "nacht_statisch": {"name": "Nachts statisch regeln", "icon": "mdi:weather-night", "default": False},

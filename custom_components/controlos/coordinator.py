@@ -131,7 +131,8 @@ class ControlosCoordinator(DataUpdateCoordinator):
     # Ausloeser beobachten (sonst Rueckkopplung, v.a. der zerfallende Bias).
     _SELF_WRITTEN = frozenset((
         "vpd_bias_tag", "vpd_bias_nacht", "temp_bias_tag", "temp_bias_nacht",
-        "hum_bias_tag", "hum_bias_nacht", "licht_ende", "bluete_start"))
+        "hum_bias_tag", "hum_bias_nacht", "licht_ende", "bluete_start",
+        "ent_overshoot"))
     # Nur echte Eingabe-Entities beobachten (keine Sensor-Ausgaben, die sich
     # jeden Tick aendern und sonst eine Endlosschleife ausloesen wuerden).
     _INPUT_DOMAINS = ("select", "switch", "number", "time", "date", "text")
