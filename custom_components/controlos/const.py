@@ -243,6 +243,7 @@ SWITCH_PARAMS = {
     "ki_modus":       {"name": "KI-Bias (adaptiver Setpoint)", "icon": "mdi:auto-fix", "default": False},
     "ki_vorsteuerung": {"name": "KI-Vorsteuerung (Prognose dämpft Schwingungen)", "icon": "mdi:chart-timeline-variant-shimmer", "default": False},
     "overshoot_komp": {"name": "Entfeuchter-Nachlauf kompensieren (lernt Overshoot)", "icon": "mdi:chart-bell-curve-cumulative", "default": False},
+    "klima_dry_assist": {"name": "AC-Feuchte-Assist (dry bei Feuchte-Not)", "icon": "mdi:air-conditioner", "default": False},
     "mqtt_watchdog":  {"name": "MQTT-Watchdog (Broker-Neustart bei Sensor-Ausfall)", "icon": "mdi:restart-alert", "default": True},
     "benachrichtigungen": {"name": "Benachrichtigungen", "icon": "mdi:bell", "default": True},
     "nacht_statisch": {"name": "Nachts statisch regeln", "icon": "mdi:weather-night", "default": False},

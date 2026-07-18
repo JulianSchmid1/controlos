@@ -836,6 +836,32 @@ class Regler:
         klima_dry_need = False
         if hum is not None and not ent_da and "dry" in klima_modes:
             klima_dry_need = self.latch("kdry", hum >= ziel_hum + f_tol, hum <= ziel_hum)
+
+        # Feuchte-Not-Assist (AC-Entfeuchtungs-Koordination): laeuft die
+        # Feuchte trotz laufendem Entfeuchter weg (VPD deutlich unter
+        # Korridor-Min), waehrend der AC-Kompressor idlet (nur Luefter ->
+        # die AC entfeuchtet gerade NICHT mit), wird der dry-Modus
+        # angestossen - die AC traegt dann ihren Anteil, statt den
+        # Entfeuchter allein kaempfen zu lassen. Terps-Schutz: nur solange
+        # die Temperatur nicht mehr als 1 °C unters Ziel rutscht; Ende,
+        # sobald der VPD zurueck im Korridor ist. AC-Modus-Wechsel bleiben
+        # ueber die Klima-Mindestzeit (rt_klima_mode) gedeckelt.
+        if (ctx.sw("klima_dry_assist") and klima_is_climate
+                and "dry" in klima_modes and ent_da
+                and eff_modus == "VPD" and vpd is not None):
+            try:
+                rt_w = float(ctx.attr(d_klima, "realtime_power"))
+            except (TypeError, ValueError):
+                rt_w = None
+            k_idle = rt_w is not None and rt_w < 250.0
+            temp_ok = temp is not None and temp > ziel_temp - 1.0
+            dry_assist = self.latch(
+                "kdryassist",
+                vpd_g <= vpd_min and ent_on and k_idle and temp_ok,
+                vpd_g >= lo_perf or not temp_ok,
+                min_s=klima_min_s)
+        else:
+            dry_assist = self.latch("kdryassist", False, True)
         if ctrl_temp is not None:
             kcool = self.latch("kcool", ctrl_temp >= klima_ziel_eff + temp_tol, ctrl_temp <= klima_ziel_eff)
             kheat = self.latch("kheat", ctrl_temp <= klima_ziel_eff - temp_tol, ctrl_temp >= klima_ziel_eff)
@@ -848,7 +874,7 @@ class Regler:
                 aktiv_mode = "cool"
             elif klima_is_climate and kheat and not heiz_da and "heat" in klima_modes:
                 aktiv_mode = "heat"
-            elif klima_dry_need:
+            elif dry_assist or klima_dry_need:
                 aktiv_mode = "dry"
 
         _mmap = {"Kühlen": "cool", "Heizen": "heat", "Auto": "auto", "Aus": "off"}
@@ -857,6 +883,10 @@ class Regler:
 
         if klima_sm == "Autonom":
             klima_mode = spiegel
+            # Feuchte-Not-Assist uebersteuert den Spiegel-Modus (nur wenn
+            # die AC ueberhaupt an sein soll)
+            if dry_assist and spiegel != "off":
+                klima_mode = "dry"
             # Bei VPD->Temp-Kopplung gilt auch im Autonom-Modus das dynamische
             # Ziel (sonst das manuelle AC-Ziel Tag/Nacht).
             klima_target = (round(klima_ziel_eff, 1) if vpd_temp_kopplung
@@ -1049,6 +1079,8 @@ class Regler:
             _ml = {"cool": "Kühlen", "heat": "Heizen", "dry": "Entfeuchten",
                    "fan_only": "nur Lüfter",
                    "auto": "Auto"}.get(klima_mode, klima_mode)
+            if klima_mode == "dry" and dry_assist:
+                _ml = "Feuchte-Assist"
             _tgt = " @ %.1fC" % klima_target if klima_mode in ("cool", "heat", "auto") else ""
             shadow["klima"] = "[%s/%s] %s (%s%s, fan %s) -> %s%s" % (
                 _live, _sm, klima_mode.upper(), _ml, _tgt, klima_fan_eff, d_klima, klima_acted)
