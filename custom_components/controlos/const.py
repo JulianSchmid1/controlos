@@ -187,7 +187,7 @@ NUMBER_PARAMS = {
     "ent_duty":        {"name": "Entfeuchter Laufzeit-Anteil (PID)", "min": 0, "max": 100, "step": 0.5, "unit": "%", "icon": "mdi:percent-circle", "default": 0},
     "ent_takt_fenster": {"name": "PWM-Trägerperiode", "min": 2, "max": 30, "step": 1, "unit": "min", "icon": "mdi:timer-sand", "default": 4},
     "pid_kp":          {"name": "PID Kp (Proportional)", "min": 0, "max": 15, "step": 0.1, "unit": "", "icon": "mdi:alpha-p-box", "default": 2.0},
-    "pid_ki":          {"name": "PID Ki (Integral)", "min": 0, "max": 0.2, "step": 0.005, "unit": "", "icon": "mdi:alpha-i-box", "default": 0.01},
+    "pid_ki":          {"name": "PID Ki (Integral)", "min": 0, "max": 0.02, "step": 0.0001, "unit": "", "icon": "mdi:alpha-i-box", "default": 0.0005},
     "pid_kd":          {"name": "PID Kd (Differential)", "min": 0, "max": 100, "step": 1, "unit": "", "icon": "mdi:alpha-d-box", "default": 25},
     # -- Klima-Steuerung --
     "klima_ziel_tag":   {"name": "AC-Ziel Tag",   "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 24},
