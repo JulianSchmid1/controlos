@@ -987,16 +987,33 @@ function klimaView(a) {
           cOn(wp + "vorhanden_entfeuchter"), cEq(sp + "entfeuchter_steuermodus", "Hybrid")),
         V(bslider(np + "entfeuchter_min_laufzeit", "Mindestlaufzeit (Anti-Takten)"),
           cOn(wp + "vorhanden_entfeuchter")),
-        V(sep("Regelart (Hysterese / Takt)", "mdi:sine-wave"),
+        V(sep("Regelart (Hysterese / PID)", "mdi:sine-wave"),
           cOn(wp + "vorhanden_entfeuchter")),
         V(bsel(sp + "ent_regelart", "Regelart"),
           cOn(wp + "vorhanden_entfeuchter")),
-        V(bslider(np + "ent_duty", "Taktanteil (adaptiv, live)"),
+        V(bslider(np + "ent_duty", "Laufzeit-Anteil (PID, live)"),
           cOn(wp + "vorhanden_entfeuchter"),
-          cEq(sp + "ent_regelart", "Takt (adaptiv)")),
-        V(bslider(np + "ent_takt_fenster", "Takt-Fensterlänge"),
-          cOn(wp + "vorhanden_entfeuchter"),
-          cEq(sp + "ent_regelart", "Takt (adaptiv)")),
+          cEq(sp + "ent_regelart", "PID + PWM")),
+        V(bnav("PID abstimmen (Kp/Ki/Kd)", "mdi:tune-variant",
+            "#pid-" + s), cOn(wp + "vorhanden_entfeuchter"),
+          cEq(sp + "ent_regelart", "PID + PWM")),
+        // ---- Pop-up: PID-Tuning ----
+        { type: "custom:bubble-card", card_type: "pop-up",
+          name: "PID abstimmen", icon: "mdi:tune-variant",
+          hash: "#pid-" + s, cards: [
+            { type: "markdown", content:
+              "**Kp** = Reaktionsstärke auf den aktuellen Fehler · **Ki** = " +
+              "baut bleibende Abweichung langsam ab (zu hoch = träges " +
+              "Pendeln) · **Kd** = dämpft schnelle Änderungen · " +
+              "**PWM-Trägerperiode** = wie oft die An/Aus-Umsetzung neu " +
+              "geplant wird (kurz = feiner). Bei Schwingen zuerst Kp " +
+              "senken, dann Ki." },
+            bslider(np + "pid_kp", "Kp (Proportional)"),
+            bslider(np + "pid_ki", "Ki (Integral)"),
+            bslider(np + "pid_kd", "Kd (Differential)"),
+            bslider(np + "ent_takt_fenster", "PWM-Trägerperiode"),
+            bstate(np + "ent_duty", "Laufzeit-Anteil (live)", "mdi:percent-circle"),
+          ] },
         V(sep("Abluft", "mdi:fan"), cOn(wp + "vorhanden_abluft")),
         V(bsel(sp + "abluft_modus", "Abluft-Modus"), cOn(wp + "vorhanden_abluft")),
         V(bslider(np + "abluft_backup_temp", "Backup ab Temp"), cOn(wp + "vorhanden_abluft")),

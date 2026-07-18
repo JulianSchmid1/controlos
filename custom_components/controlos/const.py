@@ -183,9 +183,12 @@ NUMBER_PARAMS = {
     "ki_ff_max_mae": {"name": "KI-Vorsteuerung MAE-Grenze", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:target-variant", "default": 0.2},
     # -- Entfeuchter-Overshoot (gelernter VPD-Nachlauf nach dem Abschalten) --
     "ent_overshoot": {"name": "Entfeuchter-Nachlauf (gelernt)", "min": 0, "max": 0.3, "step": 0.005, "unit": "kPa", "icon": "mdi:chart-bell-curve", "default": 0},
-    # -- Taktregelung (Zeit-Proportional: Laufzeit je Fenster statt Hysterese) --
-    "ent_duty":        {"name": "Entfeuchter Taktanteil (adaptiv)", "min": 0, "max": 100, "step": 0.5, "unit": "%", "icon": "mdi:percent-circle", "default": 0},
-    "ent_takt_fenster": {"name": "Takt-Fensterlänge", "min": 4, "max": 30, "step": 1, "unit": "min", "icon": "mdi:timer-sand", "default": 10},
+    # -- PID + PWM (Duty = kontinuierliche PID-Ausgabe, PWM setzt sie um) --
+    "ent_duty":        {"name": "Entfeuchter Laufzeit-Anteil (PID)", "min": 0, "max": 100, "step": 0.5, "unit": "%", "icon": "mdi:percent-circle", "default": 0},
+    "ent_takt_fenster": {"name": "PWM-Trägerperiode", "min": 2, "max": 30, "step": 1, "unit": "min", "icon": "mdi:timer-sand", "default": 4},
+    "pid_kp":          {"name": "PID Kp (Proportional)", "min": 0, "max": 15, "step": 0.1, "unit": "", "icon": "mdi:alpha-p-box", "default": 2.0},
+    "pid_ki":          {"name": "PID Ki (Integral)", "min": 0, "max": 0.2, "step": 0.005, "unit": "", "icon": "mdi:alpha-i-box", "default": 0.01},
+    "pid_kd":          {"name": "PID Kd (Differential)", "min": 0, "max": 100, "step": 1, "unit": "", "icon": "mdi:alpha-d-box", "default": 25},
     # -- Klima-Steuerung --
     "klima_ziel_tag":   {"name": "AC-Ziel Tag",   "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 24},
     "klima_ziel_nacht": {"name": "AC-Ziel Nacht", "min": 10, "max": 35, "step": 0.5, "unit": "°C", "icon": "mdi:air-conditioner", "default": 22},
@@ -286,7 +289,7 @@ SELECT_PARAMS = {
     "system_modus":    {"name": "System Modus",    "icon": "mdi:tent", "options": ["Geschlossenes System", "Offenes System"], "default": "Geschlossenes System"},
     "klima_steuermodus": {"name": "Klima Steuermodus", "icon": "mdi:tune", "options": ["Area-Sensor", "Geräte-Sensor", "Hybrid", "Autonom"], "default": "Autonom"},
     "entfeuchter_steuermodus": {"name": "Entfeuchter Steuermodus", "icon": "mdi:tune", "options": ["Area-Sensor", "Geräte-Sensor", "Hybrid", "Autonom"], "default": "Area-Sensor"},
-    "ent_regelart":    {"name": "Entfeuchter Regelart", "icon": "mdi:sine-wave", "options": ["Hysterese", "Takt (adaptiv)"], "default": "Hysterese"},
+    "ent_regelart":    {"name": "Entfeuchter Regelart", "icon": "mdi:sine-wave", "options": ["Hysterese", "PID + PWM"], "default": "Hysterese"},
     "prio":            {"name": "Maßgebender Faktor", "icon": "mdi:swap-vertical", "options": ["temperatur", "feuchte"], "default": "temperatur"},
     "wuchsphase":      {"name": "Wuchsphase", "icon": "mdi:sprout", "options": ["Keimling / Klon", "Vegetation", "Vorblüte", "Hauptblüte", "Spätblüte", "Trocknen"], "default": "Vegetation"},
     "phase_editor":    {"name": "Phase bearbeiten", "icon": "mdi:pencil-ruler", "options": PHASES, "default": "Vegetation"},
