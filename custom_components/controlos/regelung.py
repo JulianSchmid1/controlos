@@ -35,6 +35,7 @@ class Regler:
         self._pwm_lauf = 0.0     # geplante Laufzeit dieses Fensters (s)
         self._pwm_schuld = 0.0   # Laufzeit-Uebertrag aus Vorfenstern (s)
         self._pid_on = False     # war letzter Tick im PID-Modus?
+        self._ea_glatt: list = []  # (ts, Dampfdruck) ~3 min fuers PID-Signal
 
     # ------------------------------------------------------------------
     def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
@@ -58,6 +59,11 @@ class Regler:
             self._latch[key] = new
             self._last_sw[key] = now
         return self._latch.get(key, new)
+
+    @staticmethod
+    def _svp(t):
+        """Saettigungsdampfdruck (kPa) nach Magnus."""
+        return 0.6108 * math.e ** (17.27 * t / (t + 237.3))
 
     @staticmethod
     def _licht_window(now_t, start, ende):
@@ -191,46 +197,51 @@ class Regler:
         self._os_start = 0.0
 
     # ------------------------------------------------------------------
-    def pid_ent(self, ctx, vpd, vpd_g, ziel, vmin, vmax, min_s, bias_out):
+    def pid_ent(self, ctx, fehler, mess, vpd, vpd_g, vmin, vmax,
+                min_s, bias_out):
         """PID-Regler + PWM-Ausgabe fuer den Entfeuchter (An/Aus-Geraet).
 
         Wie professionelle Klimacomputer: Ein PID berechnet KONTINUIERLICH
         (jeden Tick) die noetige Entfeuchter-Laufzeit (Duty 0-100 %); ein
-        kurzes PWM-Fenster setzt sie in An/Aus um. Regelgroesse ist der
-        geglaettete, prognose-verschobene VPD (vpd_g) -> Feedforward
-        (KI-Vorsteuerung) + Feedback (PID) kombiniert. Kein Fenster-Totzeit
-        mehr (das war der Schwing-Fehler des reinen P-Takts).
+        kurzes PWM-Fenster setzt sie in An/Aus um. Kein Fenster-Totzeit mehr
+        (das war der Schwing-Fehler des reinen P-Takts).
 
-        - P: Kp*Fehler (Fehler = Ziel-VPD, >0 = zu feucht -> mehr Laufzeit)
-        - I: Ki*integral, Conditional-Integration als Anti-Windup (kein
-             Aufsummieren in Saettigung)
-        - D: -Kd*d(VPD)/dt auf dem MESSWERT (kein Derivative-Kick bei
-             Zielaenderung), auf vpd_g -> rauscharm
-        Bandkanten bleiben Not-Overrides (Korridor-Max -> Sofort-Stopp mit
-        I-Entlastung, deutlich unter Min -> Dauerlauf)."""
+        Regelgroesse ist der Wasserdampf-PARTIALDRUCK (absolute Feuchte),
+        NICHT der VPD - der Aufrufer liefert `fehler` (>0 = zu feucht ->
+        mehr Laufzeit) und `mess` (geglaettetes Feuchte-Ist, hoeher =
+        feuchter) fertig. Grund: der Entfeuchter entzieht Wasser; der
+        Dampfdruck bleibt bei AC-Kuehlung konstant, waehrend der VPD real
+        mitzappelt (kuehleres Blatt = kleinerer VPD ohne Feuchteaenderung).
+        So sieht der Regler nur echte Feuchte, keine Kompressor-Zacken.
+
+        - P: Kp*fehler
+        - I: Ki*integral, Conditional-Integration als Anti-Windup
+        - D: Kd*d(mess)/dt auf dem MESSWERT (kein Kick bei Zielaenderung;
+             feuchter werdend -> mehr Laufzeit, antizipiert)
+        Bandkanten bleiben Not-Overrides IN VPD (Pflanzensicht): Korridor-
+        Max -> Sofort-Stopp mit I-Entlastung, deutlich unter Min -> Dauerlauf."""
         now = time.time()
         kp = ctx.num("pid_kp", 2.0)
         ki = ctx.num("pid_ki", 0.01)
         kd = ctx.num("pid_kd", 25.0)
-        e = ziel - vpd_g
 
         # Zeitschritt robust (Neustart/Luecken abfangen)
         dt = (now - self._pid_t) if self._pid_t else 30.0
         dt = max(10.0, min(120.0, dt))
         self._pid_t = now
 
-        # D auf dem Messwert statt auf e -> kein Kick bei Zielaenderung
-        dvpd = ((vpd_g - self._pid_prev) / dt
-                if self._pid_prev is not None else 0.0)
-        self._pid_prev = vpd_g
-        p_term = kp * e
-        d_term = -kd * dvpd
+        # D auf dem Messwert (feuchter=hoeher) -> kein Kick bei Zielaenderung
+        dm = ((mess - self._pid_prev) / dt
+              if self._pid_prev is not None else 0.0)
+        self._pid_prev = mess
+        p_term = kp * fehler
+        d_term = kd * dm
 
         # Anti-Windup (Conditional Integration): I nur weiterfuehren, wenn
         # die Ausgabe damit nicht tiefer in die Saettigung getrieben wird.
         roh = p_term + self._pid_i + d_term
-        if not ((roh >= 1.0 and e > 0) or (roh <= 0.0 and e < 0)):
-            self._pid_i = max(-1.0, min(1.0, self._pid_i + ki * e * dt))
+        if not ((roh >= 1.0 and fehler > 0) or (roh <= 0.0 and fehler < 0)):
+            self._pid_i = max(-1.0, min(1.0, self._pid_i + ki * fehler * dt))
         out = max(0.0, min(1.0, p_term + self._pid_i + d_term))
 
         duty = round(out * 100.0, 1)
@@ -388,6 +399,7 @@ class Regler:
 
         temp = d.get("data_temp_luft")
         hum = d.get("data_feuchte_luft")
+        temp_blatt = d.get("data_temp_blatt")
         vpd = d.get("data_vpd")
         co2 = d.get("data_co2")
         ziel_temp = d.get("data_ziel_temp") or 25.0
@@ -684,10 +696,28 @@ class Regler:
             if pid_aktiv:
                 if not self._pid_on:   # frisch in den PID-Modus -> Reset
                     self.pid_reset()
+                    self._ea_glatt = []
                     self._pid_on = True
-                ent_on = self.pid_ent(ctx, vpd, vpd_g, vpd_ziel,
-                                      vpd_min, vpd_max, entf_min_s,
-                                      bias_out)
+                # Regelgroesse = Wasserdampf-Partialdruck (immun gg. AC-Zacken).
+                # e_a_ist = SVP(Luft)*RH ; Ziel-e_a = SVP(Blatt) - VPD-Ziel.
+                # Fehlt ein Messwert -> Fallback auf das VPD-Signal.
+                tb = temp if temp_blatt is None else temp_blatt
+                if temp is not None and hum is not None and tb is not None:
+                    e_a = self._svp(temp) * hum / 100.0
+                    now_ = time.time()
+                    self._ea_glatt.append((now_, e_a))
+                    self._ea_glatt = [(t, v) for t, v in self._ea_glatt
+                                      if now_ - t <= 180]
+                    e_a_g = sum(v for _, v in self._ea_glatt) / len(self._ea_glatt)
+                    # KI-Vorsteuerung (auf vpd_g gerechnet) gegenlaeufig auf e_a
+                    ff_bei = vpd_g - vpd_glatt_anzeige
+                    mess = e_a_g - ff_bei
+                    fehler = mess - (self._svp(tb) - vpd_ziel)
+                else:
+                    mess = -vpd_g
+                    fehler = vpd_ziel - vpd_g
+                ent_on = self.pid_ent(ctx, fehler, mess, vpd, vpd_g,
+                                      vpd_min, vpd_max, entf_min_s, bias_out)
                 self._latch["ent"] = ent_on  # Konsistenz f. Uebergaenge
             elif ent_da:
                 self._pid_on = False
