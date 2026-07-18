@@ -1252,8 +1252,6 @@ function duengerView(a) {
     icon: "mdi:bottle-tonic", subview: true, theme: THEME,
     type: "sections", max_columns: 3, sections: [
       // Reihe 1: Kalender (breit) + kompakte Terminliste daneben.
-      // Alle Pflege-Termine als eigener Kalender (Balkenansicht im Monat);
-      // im Grow-Kalender erscheint Pflege nur noch als Erinnerungs-Notiz.
       { type: "grid", column_span: 2, cards: [
         sep("Pflege-Kalender", "mdi:watering-can"),
         { type: "calendar", initial_view: "dayGridMonth",
@@ -1264,94 +1262,120 @@ function duengerView(a) {
         sep("Nächste Termine", "mdi:calendar-clock"),
         { type: "markdown", content: terminListe },
         bsw(wp + "notify_duenger", "Push am Anwendungstag", "mdi:bell"),
+        // Verwalten: Formulare liegen in Pop-ups, die Seite bleibt Uebersicht
+        sep("Verwalten", "mdi:gesture-tap-button"),
+        bnav("Produkt anlegen", "mdi:plus-circle", "#pf-" + s + "-produkt"),
+        bnav("Regel anlegen", "mdi:calendar-plus", "#pf-" + s + "-regel"),
+        bnav("Strain verknüpfen", "mdi:link-variant", "#pf-" + s + "-strain"),
+        bnav("Entfernen / Aufräumen", "mdi:trash-can-outline", "#pf-" + s + "-weg"),
       ] },
-      // Reihe 2: Produkte | Regel-Formular | Strain-Verknuepfung
-      { type: "grid", cards: [
-        sep("Produkte", "mdi:bottle-tonic"),
+      // Reihe 2: Produkt- und Regel-Uebersicht in voller Breite
+      { type: "grid", column_span: 3, cards: [
+        sep("Produkte & Plan", "mdi:bottle-tonic"),
         { type: "markdown", content: produktListe },
-        sep("Neues Produkt", "mdi:plus-circle"),
-        bstate("text.controlos_" + s + "_duenger_hersteller",
-          "Neuer Hersteller (tippen zum Eingeben)", "mdi:factory"),
-        bbtn(bp + "duenger_hersteller_neu", "Hersteller anlegen", "mdi:factory"),
-        bsel(sp + "duenger_hersteller_sel", "Hersteller wählen"),
-        bstate("text.controlos_" + s + "_duenger_name",
-          "Produktname (tippen zum Eingeben)", "mdi:bottle-tonic"),
-        bsel(sp + "duenger_kategorie", "Kategorie"),
-        bsel(sp + "duenger_typ", "Typ"),
-        bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
-        bsel(sp + "duenger_menge_einheit", "Mengen-Einheit"),
-        bbtn(bp + "duenger_anlegen", "Produkt anlegen", "mdi:plus-circle"),
-        bbtn(bp + "duenger_entfernen",
-          "Gewähltes Produkt entfernen (Auswahl im Regel-Formular)",
-          "mdi:minus-circle"),
-      ] },
-      { type: "grid", cards: [
-        sep("Regel anlegen", "mdi:calendar-multiselect"),
-        { type: "markdown", content:
-          "**Normale Regel** gilt für alle verknüpften Strains. " +
-          "**Sonderregel** gilt NUR für den gewählten Strain und ersetzt " +
-          "dort die passende Normalregel (gleiche Anwendung + Phase) — " +
-          "z. B. 10 ml statt 5 ml wöchentlich. **Kombi-Produkt**: legt " +
-          "dieselbe Regel gleich für ein zweites Produkt mit an — z. B. " +
-          "Orgatrex × Bactrex im selben Gießwasser. Die Menge gibst du " +
-          "**je Produkt einzeln** an; die Einheit (ml/g) kommt automatisch " +
-          "aus dem jeweiligen Produkt." },
-        bsel(sp + "duenger_produkt", "Produkt wählen"),
-        bsel(sp + "duenger_produkt_2", "+ Kombi-Produkt (optional)"),
-        bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
-        V(bsel(sp + "duenger_strain", "Strain (für die Sonderregel)"),
-          cEq(sp + "duenger_regel_art", "Sonderregel (nur gewählter Strain)")),
-        bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
-        bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
-        // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
-        V(bsel(sp + "duenger_phase", "Phase (Veg / Blüte)"),
-          cEq(sp + "grow_typ", "Photoperiodisch")),
-        V(bslider(np + "duenger_zeitpunkt", "Zeitpunkt (Tag-/Wochen-Nr.)"),
-          cEq(sp + "duenger_plan_modus", "Einmalig")),
-        // Wiederholend: gleiches Feld = Start "ab Tag/Woche N"
-        V(bslider(np + "duenger_zeitpunkt", "Start ab (Tag-/Wochen-Nr.)"),
-          cEq(sp + "duenger_plan_modus", "Wiederholend")),
-        V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
-          cEq(sp + "duenger_plan_modus", "Wiederholend")),
-        // Tippen oeffnet das Zahlenfeld (praeziser Wert, handytauglich).
-        // Ohne Kombi heisst das Feld schlicht "Menge je Anwendung", mit
-        // Kombi wird klar unterschieden: 1. Produkt / Kombi-Produkt.
-        V(bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
-            "mdi:beaker"),
-          cEq(sp + "duenger_produkt_2", "—")),
-        V(bstate(np + "duenger_menge", "Menge · 1. Produkt (0 = ohne)",
-            "mdi:beaker"),
-          { condition: "state", entity: sp + "duenger_produkt_2",
-            state_not: "—" }),
-        V(bstate(np + "duenger_menge_2", "Menge · Kombi-Produkt (0 = ohne)",
-            "mdi:beaker-outline"),
-          { condition: "state", entity: sp + "duenger_produkt_2",
-            state_not: "—" }),
-        // Push-Verhalten am Anwendungstag: je Regel einstellbar
-        bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
-        V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
-        V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
-          cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
-        bbtn(bp + "duenger_regel_add", "Regel hinzufügen", "mdi:calendar-plus"),
-        sep("Regel entfernen", "mdi:calendar-minus"),
-        bsel(sp + "duenger_regel_sel", "Normale Regel (zum Entfernen)"),
-        bbtn(bp + "duenger_regel_remove", "Gewählte Regel entfernen", "mdi:calendar-minus"),
-        bsel(sp + "duenger_extra_sel", "Sonderregel des gewählten Strains"),
-        bbtn(bp + "duenger_extra_remove", "Gewählte Sonderregel entfernen", "mdi:star-minus"),
-      ] },
-      { type: "grid", cards: [
-        sep("Strain-Verknüpfung", "mdi:link-variant"),
-        { type: "markdown", content:
-          "**Einzelprodukt** verknüpfen ODER die komplette **Hersteller-" +
-          "Methode** (alle Produkte des Herstellers, z. B. BioTabs). " +
-          "Termine landen im Pflege-Kalender + Push am Anwendungstag." },
-        bsel(sp + "duenger_strain", "Strain wählen"),
-        bbtn(bp + "duenger_link", "Produkt mit Strain verknüpfen", "mdi:link-variant"),
-        bbtn(bp + "duenger_unlink", "Produkt-Verknüpfung trennen", "mdi:link-variant-off"),
-        bsel(sp + "duenger_hersteller_sel", "Hersteller (Methode)"),
-        bbtn(bp + "duenger_h_link", "Hersteller-Methode verknüpfen", "mdi:factory"),
-        bbtn(bp + "duenger_h_unlink", "Hersteller-Methode trennen", "mdi:link-variant-off"),
+
+        // ---- Pop-up: Produkt anlegen ----
+        { type: "custom:bubble-card", card_type: "pop-up",
+          name: "Produkt anlegen", icon: "mdi:plus-circle",
+          hash: "#pf-" + s + "-produkt", cards: [
+            sep("Hersteller", "mdi:factory"),
+            bstate("text.controlos_" + s + "_duenger_hersteller",
+              "Neuer Hersteller (tippen zum Eingeben)", "mdi:factory"),
+            bbtn(bp + "duenger_hersteller_neu", "Hersteller anlegen", "mdi:factory"),
+            bsel(sp + "duenger_hersteller_sel", "Hersteller wählen"),
+            sep("Produkt", "mdi:bottle-tonic"),
+            bstate("text.controlos_" + s + "_duenger_name",
+              "Produktname (tippen zum Eingeben)", "mdi:bottle-tonic"),
+            bsel(sp + "duenger_kategorie", "Kategorie"),
+            bsel(sp + "duenger_typ", "Typ"),
+            bsel(sp + "duenger_form", "Form (Flüssig / Trocken)"),
+            bsel(sp + "duenger_menge_einheit", "Mengen-Einheit"),
+            bbtn(bp + "duenger_anlegen", "Produkt anlegen ✔", "mdi:plus-circle"),
+          ] },
+
+        // ---- Pop-up: Regel anlegen ----
+        { type: "custom:bubble-card", card_type: "pop-up",
+          name: "Regel anlegen", icon: "mdi:calendar-plus",
+          hash: "#pf-" + s + "-regel", cards: [
+            { type: "markdown", content:
+              "**Normale Regel** = alle verknüpften Strains · **Sonderregel** " +
+              "= nur der gewählte Strain (ersetzt dort die passende Normal" +
+              "regel) · **Kombi** = zweites Produkt im selben Gießwasser, " +
+              "Menge je Produkt einzeln (Einheit kommt aus dem Produkt)." },
+            sep("Was & für wen", "mdi:bottle-tonic"),
+            bsel(sp + "duenger_produkt", "Produkt wählen"),
+            bsel(sp + "duenger_produkt_2", "+ Kombi-Produkt (optional)"),
+            bsel(sp + "duenger_regel_art", "Normale Regel / Sonderregel"),
+            V(bsel(sp + "duenger_strain", "Strain (für die Sonderregel)"),
+              cEq(sp + "duenger_regel_art", "Sonderregel (nur gewählter Strain)")),
+            sep("Wann", "mdi:calendar-clock"),
+            bsel(sp + "duenger_plan_modus", "Anwendung (einmalig / wiederholend)"),
+            bsel(sp + "duenger_zeiteinheit", "Zeiteinheit (Tage / Wochen)"),
+            // Phase nur bei Photoperiodisch waehlbar (Autoflower: ab Strain-Start)
+            V(bsel(sp + "duenger_phase", "Phase (Veg / Blüte)"),
+              cEq(sp + "grow_typ", "Photoperiodisch")),
+            V(bslider(np + "duenger_zeitpunkt", "Zeitpunkt (Tag-/Wochen-Nr.)"),
+              cEq(sp + "duenger_plan_modus", "Einmalig")),
+            // Wiederholend: gleiches Feld = Start "ab Tag/Woche N"
+            V(bslider(np + "duenger_zeitpunkt", "Start ab (Tag-/Wochen-Nr.)"),
+              cEq(sp + "duenger_plan_modus", "Wiederholend")),
+            V(bslider(np + "duenger_intervall", "Wiederholen alle (Tage/Wochen)"),
+              cEq(sp + "duenger_plan_modus", "Wiederholend")),
+            sep("Menge", "mdi:beaker"),
+            V(bstate(np + "duenger_menge", "Menge je Anwendung (0 = ohne)",
+                "mdi:beaker"),
+              cEq(sp + "duenger_produkt_2", "—")),
+            V(bstate(np + "duenger_menge", "Menge · 1. Produkt (0 = ohne)",
+                "mdi:beaker"),
+              { condition: "state", entity: sp + "duenger_produkt_2",
+                state_not: "—" }),
+            V(bstate(np + "duenger_menge_2", "Menge · Kombi-Produkt (0 = ohne)",
+                "mdi:beaker-outline"),
+              { condition: "state", entity: sp + "duenger_produkt_2",
+                state_not: "—" }),
+            sep("Push am Anwendungstag", "mdi:bell"),
+            bsel(sp + "duenger_erinnerung_modus", "Push: einmalig / bis abgehakt"),
+            V(bslider(np + "duenger_erinnerung_intervall", "Erinnern alle"),
+              cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+            V(bsel(sp + "duenger_erinnerung_einheit", "Stunden oder Tage"),
+              cEq(sp + "duenger_erinnerung_modus", "Intervall bis abgehakt")),
+            bbtn(bp + "duenger_regel_add", "Regel hinzufügen ✔", "mdi:calendar-plus"),
+          ] },
+
+        // ---- Pop-up: Strain verknuepfen ----
+        { type: "custom:bubble-card", card_type: "pop-up",
+          name: "Strain verknüpfen", icon: "mdi:link-variant",
+          hash: "#pf-" + s + "-strain", cards: [
+            { type: "markdown", content:
+              "**Einzelprodukt** verknüpfen ODER die komplette **Hersteller-" +
+              "Methode** (alle Produkte des Herstellers, z. B. BioTabs). " +
+              "Termine landen im Pflege-Kalender + Push am Anwendungstag." },
+            bsel(sp + "duenger_strain", "Strain wählen"),
+            sep("Einzelprodukt", "mdi:bottle-tonic"),
+            bsel(sp + "duenger_produkt", "Produkt"),
+            bbtn(bp + "duenger_link", "Verknüpfen", "mdi:link-variant"),
+            bbtn(bp + "duenger_unlink", "Trennen", "mdi:link-variant-off"),
+            sep("Hersteller-Methode", "mdi:factory"),
+            bsel(sp + "duenger_hersteller_sel", "Hersteller"),
+            bbtn(bp + "duenger_h_link", "Methode verknüpfen", "mdi:factory"),
+            bbtn(bp + "duenger_h_unlink", "Methode trennen", "mdi:link-variant-off"),
+          ] },
+
+        // ---- Pop-up: Entfernen / Aufraeumen ----
+        { type: "custom:bubble-card", card_type: "pop-up",
+          name: "Entfernen / Aufräumen", icon: "mdi:trash-can-outline",
+          hash: "#pf-" + s + "-weg", cards: [
+            sep("Normale Regel", "mdi:calendar-minus"),
+            bsel(sp + "duenger_regel_sel", "Regel wählen"),
+            bbtn(bp + "duenger_regel_remove", "Regel entfernen", "mdi:calendar-minus"),
+            sep("Sonderregel", "mdi:star-minus"),
+            bsel(sp + "duenger_strain", "Strain"),
+            bsel(sp + "duenger_extra_sel", "Sonderregel des Strains"),
+            bbtn(bp + "duenger_extra_remove", "Sonderregel entfernen", "mdi:star-minus"),
+            sep("Produkt", "mdi:minus-circle"),
+            bsel(sp + "duenger_produkt", "Produkt wählen"),
+            bbtn(bp + "duenger_entfernen", "Produkt komplett entfernen", "mdi:minus-circle"),
+          ] },
       ] },
     ] };
 }
