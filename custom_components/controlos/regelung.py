@@ -27,6 +27,12 @@ class Regler:
         self._os_start = 0.0
         self._os_v0 = 0.0
         self._os_peak = 0.0
+        # Taktregelung (Zeit-Proportional): Fenster-Zustand
+        self._pwm_start = 0.0    # Fensterbeginn (ts)
+        self._pwm_lauf = 0.0     # geplante Laufzeit dieses Fensters (s)
+        self._pwm_schuld = 0.0   # Laufzeit-Uebertrag aus Vorfenstern (s)
+        self._pwm_sum = 0.0      # VPD-Summe des Fensters (Bilanz)
+        self._pwm_n = 0
 
     # ------------------------------------------------------------------
     def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
@@ -181,6 +187,52 @@ class Regler:
         if abs(neu - alt) > 0.001:
             bias_out["ent_overshoot"] = neu
         self._os_start = 0.0
+
+    # ------------------------------------------------------------------
+    def takt_ent(self, ctx, vpd, vpd_g, ziel, vmin, vmax, min_s, bias_out):
+        """Zeit-Proportionalregelung fuer den Entfeuchter (An/Aus-Geraet).
+
+        Statt Hysterese: je Fenster (ent_takt_fenster, Min.) laeuft das
+        Geraet einen adaptiven Anteil (ent_duty, %) - wie ein Heizungs-
+        Thermostat. Der Anteil wird je Fensterende aus der VPD-Bilanz
+        nachgefuehrt (Fenster-Mittel unter Ziel = zu feucht -> mehr
+        Laufzeit); die KI-Vorsteuerung fliesst ueber das bereits
+        prognose-verschobene vpd_g automatisch mit ein. Mindestdosen
+        unter der Geraete-Mindestlaufzeit werden als 'Schuld' in die
+        Folgefenster uebertragen. Bandkanten bleiben Not-Overrides:
+        vpd >= Korridor-Max -> Sofort-Stopp, deutlich unter Min ->
+        Dauerlauf, egal was der Fahrplan sagt."""
+        now = time.time()
+        fenster = max(240.0, ctx.num("ent_takt_fenster", 10.0) * 60.0)
+        duty = max(0.0, min(1.0, ctx.num("ent_duty", 0.0) / 100.0))
+
+        if not self._pwm_start or now - self._pwm_start >= fenster:
+            # Fensterende: Duty aus der Bilanz nachfuehren
+            if self._pwm_n:
+                fehler = ziel - (self._pwm_sum / self._pwm_n)  # >0 = zu feucht
+                duty = max(0.0, min(1.0, duty + 0.8 * fehler))
+                bias_out["ent_duty"] = round(duty * 100.0, 1)
+            # Fahrplan: Soll-Laufzeit + Schuld; Mindestdosis beachten
+            plan = duty * fenster + self._pwm_schuld
+            if plan < min_s * 0.5:
+                self._pwm_lauf = 0.0
+                self._pwm_schuld = max(0.0, plan)
+            else:
+                self._pwm_lauf = min(fenster, max(min_s, plan))
+                self._pwm_schuld = plan - self._pwm_lauf
+            self._pwm_start = now
+            self._pwm_sum = 0.0
+            self._pwm_n = 0
+
+        self._pwm_sum += vpd_g
+        self._pwm_n += 1
+
+        # Not-Overrides an den Bandkanten
+        if vpd >= vmax or vpd_g >= vmax:
+            return False
+        if vpd_g <= vmin and vpd <= vmin:
+            return True
+        return (now - self._pwm_start) < self._pwm_lauf
 
     # ------------------------------------------------------------------
     def ki_bias(self, ctx, eff_modus, ist_tag, sys_modus, tank_voll,
@@ -594,11 +646,20 @@ class Regler:
             os_delta = (ctx.num("ent_overshoot", 0.0)
                         if ctx.sw("overshoot_komp") else 0.0)
             ent_aus = lo_perf + nz - os_delta
-            ent_on = (self.latch("ent",
-                                 vpd_g <= lo_perf and vpd <= ent_aus - nz,
-                                 vpd >= ent_aus,
-                                 min_s=entf_min_s)
-                      if ent_da else self.latch("ent", False, True))
+            takt_aktiv = (ent_da and (ctx.sel_raw("ent_regelart") or
+                                      "Hysterese").startswith("Takt"))
+            if takt_aktiv:
+                ent_on = self.takt_ent(ctx, vpd, vpd_g, vpd_ziel,
+                                       vpd_min, vpd_max, entf_min_s,
+                                       bias_out)
+                self._latch["ent"] = ent_on  # Konsistenz f. Uebergaenge
+            elif ent_da:
+                ent_on = self.latch("ent",
+                                    vpd_g <= lo_perf and vpd <= ent_aus - nz,
+                                    vpd >= ent_aus,
+                                    min_s=entf_min_s)
+            else:
+                ent_on = self.latch("ent", False, True)
             bef_on = (self.latch("bef",
                                  vpd_g >= hi_perf and vpd >= hi_perf,
                                  vpd <= hi_perf - nz)
@@ -614,6 +675,8 @@ class Regler:
             bef_stage_frac = 0.999 if vpd_g >= vpd_max else 0.0
             hum_info = "VPD %.2f (ø%.2f%s) [%.2f|%.2f|%.2f]" % (
                 vpd, vpd_glatt_anzeige, ff_txt, vpd_min, vpd_ziel, vpd_max)
+            if takt_aktiv:
+                hum_info += " | Takt %d%%" % round(ctx.num("ent_duty", 0.0))
         elif hum is not None:
             ent_on, bef_on = self.pair_hyst(
                 "ent", "bef", hum, ziel_hum - f_tol, ziel_hum + f_tol,
