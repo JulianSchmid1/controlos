@@ -1258,15 +1258,36 @@ class ControlosCoordinator(DataUpdateCoordinator):
         ents = self._ents()
         sel = ents.get("strain_auswahl")
         idx = sel.selected_index() if sel is not None else -1
+
+        async def _meldung(msg):
+            # Sichtbares Feedback direkt im UI - der Ernten-Klick soll nie
+            # "stumm" bleiben (Fehlbedienung sofort erkennbar)
+            await self.hass.services.async_call(
+                "persistent_notification", "create",
+                {"title": "🌾 ControlOS Ernte",
+                 "message": msg,
+                 "notification_id": "controlos_ernte_%s"
+                 % self.entry.entry_id})
+
         if store is None or idx < 0:
+            await _meldung("Kein Strain ausgewählt - bitte unter "
+                           "„Auswählen“ den Strain wählen und erneut "
+                           "„ernten“ drücken.")
             return
+        strains = store.strains(self.entry.entry_id)
+        sname = (strains[idx].get("name", "?")
+                 if 0 <= idx < len(strains) else "?")
         de = ents.get("ernte_datum")
         datum = getattr(de, "native_value", None)
-        store.strain_ernten(self.entry.entry_id, idx,
-                            datum.isoformat() if isinstance(datum, date)
-                            else None)
+        datum_iso = (datum.isoformat() if isinstance(datum, date)
+                     else date.today().isoformat())
+        store.strain_ernten(self.entry.entry_id, idx, datum_iso)
         if de is not None and datum is not None:
             de.set_internal(None)
+        await _meldung("%s wurde als geerntet am %s eingetragen. Falscher "
+                       "Strain oder falsches Datum? Einfach Auswahl/Datum "
+                       "korrigieren und erneut „ernten“ drücken." % (
+                           sname, datum_iso))
         await self.async_request_refresh()
 
     async def async_grow_neu(self) -> None:

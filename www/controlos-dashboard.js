@@ -737,7 +737,12 @@ function kalenderView(a) {
     "{% set einh = e.get('einheit', 'Wochen') %}" +
     "{% set tage = wert * 7 if einh == 'Wochen' else wert %}" +
     "{% set ref = e.get('start', e.get('added')) %}" +
-    "{% if zt in ['Mutterzelt','Stecklingszelt'] %}" +
+    // Geerntete Strains klar markieren (Datum korrigierbar via Ernte-Datum
+    // + erneut "ernten")
+    "{% if e.get('geerntet') %}" +
+    "- **{{ e.name }}** — 🌾 geerntet am " +
+    "{{ as_datetime(e.geerntet).strftime('%d.%m.%Y') }}\n" +
+    "{% elif zt in ['Mutterzelt','Stecklingszelt'] %}" +
     "- **{{ e.name }}** — 🌱 {% if ref %}{{ (now().date() - as_datetime(ref).date()).days + 1 }} Tage alt (seit {{ ref }})" +
     "{% else %}Alter unbekannt{% endif %}\n" +
     "{% elif auto %}" +
