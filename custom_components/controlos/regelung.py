@@ -36,6 +36,10 @@ class Regler:
         self._pwm_schuld = 0.0   # Laufzeit-Uebertrag aus Vorfenstern (s)
         self._pid_on = False     # war letzter Tick im PID-Modus?
         self._ea_glatt: list = []  # (ts, Dampfdruck) ~3 min fuers PID-Signal
+        # Feuchte-Not-Assist: Dauerlauf-Tracking + Wiederanlauf-Sperre
+        self._ent_since = 0.0    # seit wann laeuft der Entfeuchter durch
+        self._dry_prev = False
+        self._dry_cooldown = 0.0
 
     # ------------------------------------------------------------------
     def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
@@ -849,18 +853,43 @@ class Regler:
         if (ctx.sw("klima_dry_assist") and klima_is_climate
                 and "dry" in klima_modes and ent_da
                 and eff_modus == "VPD" and vpd is not None):
+            now_da = time.time()
+            # Dauerlauf-Tracking: nur ein Entfeuchter, der MINUTEN am Stueck
+            # laeuft und trotzdem nicht ankommt, ist ein Notfall. Normale
+            # Kurzlaeufe/Kompressor-Dips duerfen den Assist NICHT triggern
+            # (19.07: 141 dry/cool-Wechsel = Assist war selbst der
+            # Schwingkreis; AC+CTK trockneten doppelt).
+            if ent_on:
+                if not self._ent_since:
+                    self._ent_since = now_da
+            else:
+                self._ent_since = 0.0
+            lauf_lang = (self._ent_since
+                         and now_da - self._ent_since >= 300.0)
             try:
                 rt_w = float(ctx.attr(d_klima, "realtime_power"))
             except (TypeError, ValueError):
                 rt_w = None
             k_idle = rt_w is not None and rt_w < 250.0
             temp_ok = temp is not None and temp > ziel_temp - 1.0
+            notfall = (vpd_g <= vpd_min - 0.05 and vpd <= vpd_min
+                       and lauf_lang and k_idle and temp_ok
+                       and now_da >= self._dry_cooldown)
+            # Rueckgabe frueh: sobald der Korridor wieder erreicht ist
+            # (vpd_min + nz), nicht erst bei lo_perf - sonst schiebt das
+            # Doppel-Trocknen (AC+CTK) den VPD weit ueber Ziel.
             dry_assist = self.latch(
-                "kdryassist",
-                vpd_g <= vpd_min and ent_on and k_idle and temp_ok,
-                vpd_g >= lo_perf or not temp_ok,
+                "kdryassist", notfall,
+                vpd_g >= vpd_min + nz or not temp_ok,
                 min_s=klima_min_s)
+            # Wiederanlauf-Sperre: nach jedem Einsatz 20 min Ruhe, damit
+            # Assist-Phasen nie zum Pendel werden koennen.
+            if self._dry_prev and not dry_assist:
+                self._dry_cooldown = now_da + 1200.0
+            self._dry_prev = dry_assist
         else:
+            self._ent_since = 0.0
+            self._dry_prev = False
             dry_assist = self.latch("kdryassist", False, True)
         if ctrl_temp is not None:
             kcool = self.latch("kcool", ctrl_temp >= klima_ziel_eff + temp_tol, ctrl_temp <= klima_ziel_eff)
