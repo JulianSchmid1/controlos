@@ -1249,14 +1249,24 @@ class ControlosCoordinator(DataUpdateCoordinator):
 
     async def async_strain_ernten(self) -> None:
         """Gewaehlten Strain als geerntet markieren (Kalender-Eintrag,
-        Terminserien enden; Strain bleibt dokumentiert)."""
+        Terminserien enden; Strain bleibt dokumentiert). Datum kommt aus
+        dem Feld "Ernte-Datum" (leer = heute) - so laesst sich die Ernte
+        auch nachtraeglich mit dem echten Datum eintragen bzw. bei einem
+        bereits geernteten Strain korrigieren; das Feld wird danach
+        geleert, damit der naechste Klick wieder "heute" bedeutet."""
         store = self._store()
         ents = self._ents()
         sel = ents.get("strain_auswahl")
         idx = sel.selected_index() if sel is not None else -1
         if store is None or idx < 0:
             return
-        store.strain_ernten(self.entry.entry_id, idx)
+        de = ents.get("ernte_datum")
+        datum = getattr(de, "native_value", None)
+        store.strain_ernten(self.entry.entry_id, idx,
+                            datum.isoformat() if isinstance(datum, date)
+                            else None)
+        if de is not None and datum is not None:
+            de.set_internal(None)
         await self.async_request_refresh()
 
     async def async_grow_neu(self) -> None:

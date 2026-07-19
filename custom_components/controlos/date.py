@@ -22,6 +22,10 @@ DATE_PARAMS = {
     "bluete_start": {"name": "Blüte-Startdatum", "icon": "mdi:flower"},
     "strain_start": {"name": "Strain-Startdatum", "icon": "mdi:calendar-plus"},
     "notiz_datum":  {"name": "Notiz fällig am",   "icon": "mdi:calendar-alert"},
+    # Fuer den Ernten-Button: leer = heute; nachtraeglich korrigierbar
+    # (Strain waehlen, Datum setzen, erneut "ernten" druecken)
+    "ernte_datum":  {"name": "Ernte-Datum (leer = heute)",
+                     "icon": "mdi:calendar-edit"},
 }
 
 

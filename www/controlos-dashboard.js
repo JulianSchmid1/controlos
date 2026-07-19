@@ -815,6 +815,11 @@ function kalenderView(a) {
           { type: "markdown", content: strainList },
           { type: "entities", entities: [
             { entity: sp + "strain_auswahl", name: "Auswählen" }] },
+          // Ernte-Datum: leer = heute. Nachtraeglich eintragen/korrigieren:
+          // Strain waehlen, Datum setzen, erneut "ernten" druecken.
+          { type: "entities", entities: [
+            { entity: "date.controlos_" + s + "_ernte_datum",
+              name: "Ernte-Datum (leer = heute)" }] },
           bbtn(bp + "strain_ernten", "Gewählten Strain ernten", "mdi:content-cut"),
           bbtn(bp + "strain_remove", "Gewählten entfernen", "mdi:minus-circle"),
           sep("Archiv (abgeschlossen)", "mdi:archive"),
