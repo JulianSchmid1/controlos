@@ -183,6 +183,8 @@ NUMBER_PARAMS = {
     "ki_ff_max_mae": {"name": "KI-Vorsteuerung MAE-Grenze", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "kPa", "icon": "mdi:target-variant", "default": 0.2},
     # -- Entfeuchter-Overshoot (gelernter VPD-Nachlauf nach dem Abschalten) --
     "ent_overshoot": {"name": "Entfeuchter-Nachlauf (gelernt)", "min": 0, "max": 0.3, "step": 0.005, "unit": "kPa", "icon": "mdi:chart-bell-curve", "default": 0},
+    # -- CO2-Overshoot (gelernter Ventil-Nachlauf nach dem Schliessen) --
+    "co2_overshoot": {"name": "CO2-Ventil-Nachlauf (gelernt)", "min": 0, "max": 400, "step": 5, "unit": "ppm", "icon": "mdi:chart-bell-curve", "default": 0},
     # -- PID + PWM (Duty = kontinuierliche PID-Ausgabe, PWM setzt sie um) --
     "ent_duty":        {"name": "Entfeuchter Laufzeit-Anteil (PID)", "min": 0, "max": 100, "step": 0.5, "unit": "%", "icon": "mdi:percent-circle", "default": 0},
     "ent_takt_fenster": {"name": "PWM-Trägerperiode", "min": 2, "max": 30, "step": 1, "unit": "min", "icon": "mdi:timer-sand", "default": 4},
@@ -244,6 +246,7 @@ SWITCH_PARAMS = {
     "ki_vorsteuerung": {"name": "KI-Vorsteuerung (Prognose dämpft Schwingungen)", "icon": "mdi:chart-timeline-variant-shimmer", "default": False},
     "overshoot_komp": {"name": "Entfeuchter-Nachlauf kompensieren (lernt Overshoot)", "icon": "mdi:chart-bell-curve-cumulative", "default": False},
     "klima_dry_assist": {"name": "AC-Feuchte-Assist (dry bei Feuchte-Not)", "icon": "mdi:air-conditioner", "default": False},
+    "co2_overshoot_komp": {"name": "CO2-Nachlauf kompensieren (gegen Übersteuern)", "icon": "mdi:molecule-co2", "default": False},
     "mqtt_watchdog":  {"name": "MQTT-Watchdog (Broker-Neustart bei Sensor-Ausfall)", "icon": "mdi:restart-alert", "default": True},
     "benachrichtigungen": {"name": "Benachrichtigungen", "icon": "mdi:bell", "default": True},
     "nacht_statisch": {"name": "Nachts statisch regeln", "icon": "mdi:weather-night", "default": False},

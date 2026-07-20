@@ -987,6 +987,10 @@ function klimaView(a) {
         V(bslider(np + "co2_intervall_min", "Intervall"),
           cOn(wp + "vorhanden_co2"), cEq(sp + "co2_betrieb_modus", "Intervall")),
         Object.assign(bslider(np + "co2_max_laufzeit_min", "Max-Laufzeit (Schutz)"), co2vis),
+        V(bsw(wp + "co2_overshoot_komp", "Ventil-Nachlauf kompensieren (gegen Übersteuern)"),
+          cOn(wp + "vorhanden_co2"), cEq(sp + "co2_betrieb_modus", "Dauerbetrieb")),
+        V(bstate(np + "co2_overshoot", "CO2-Nachlauf (gelernt)", "mdi:chart-bell-curve"),
+          cOn(wp + "vorhanden_co2"), cOn(wp + "co2_overshoot_komp")),
       ] },
       { type: "grid", cards: [
         V(sep("Entfeuchter (Autonom/Hybrid)", "mdi:air-humidifier-off"),

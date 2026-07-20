@@ -40,6 +40,11 @@ class Regler:
         self._ent_since = 0.0    # seit wann laeuft der Entfeuchter durch
         self._dry_prev = False
         self._dry_cooldown = 0.0
+        # CO2-Overshoot-Lernen (Ventil-Nachlauf nach dem Schliessen)
+        self._co2_prev = False
+        self._co2_os_start = 0.0
+        self._co2_v0 = 0.0
+        self._co2_peak = 0.0
 
     # ------------------------------------------------------------------
     def latch(self, key, on_cond, off_cond, force_off=False, min_s=None):
@@ -199,6 +204,40 @@ class Regler:
         if abs(neu - alt) > 0.001:
             bias_out["ent_overshoot"] = neu
         self._os_start = 0.0
+
+    # ------------------------------------------------------------------
+    def co2_overshoot_lernen(self, ctx, co2, co2_on, aktiv, bias_out):
+        """CO2-Nachlauf des Ventils lernen (analog Entfeuchter-Overshoot).
+
+        Nach jedem Ventil-SCHLIESSEN steigt das CO2 durch Leitungs-
+        Nachlauf + Durchmischung noch weiter (das 'dauerhafte Uebersteuern'
+        bei einfacher Hysterese). Die Spitze der naechsten 5 min ueber dem
+        Schliesswert fliesst als EMA in 'co2_overshoot' (ppm) und zieht die
+        Schliess-Schwelle vor -> das CO2 landet auf dem Ziel statt darueber.
+        aktiv=False verwirft ein offenes Fenster."""
+        now = time.time()
+        if not aktiv or co2 is None:
+            self._co2_os_start = 0.0
+            self._co2_prev = bool(co2_on)
+            return
+        if self._co2_prev and not co2_on:
+            self._co2_os_start, self._co2_v0, self._co2_peak = now, co2, co2
+        elif not co2_on and self._co2_os_start:
+            if co2 > self._co2_peak:
+                self._co2_peak = co2
+            if now - self._co2_os_start >= 300:
+                self._co2_os_merken(ctx, bias_out)
+        elif co2_on and self._co2_os_start:
+            self._co2_os_merken(ctx, bias_out)
+        self._co2_prev = bool(co2_on)
+
+    def _co2_os_merken(self, ctx, bias_out):
+        delta = max(0.0, self._co2_peak - self._co2_v0)
+        alt = ctx.num("co2_overshoot", 0.0)
+        neu = round(min(400.0, 0.7 * alt + 0.3 * delta), 0)
+        if abs(neu - alt) > 1.0:
+            bias_out["co2_overshoot"] = neu
+        self._co2_os_start = 0.0
 
     # ------------------------------------------------------------------
     def pid_ent(self, ctx, fehler, mess, vpd, vpd_g, vmin, vmax,
@@ -991,12 +1030,24 @@ class Regler:
             self._last_sw["co2_on_start"] = 0
             co2_note = " [Schutz-Pause %dmin]" % rest
         else:
+            # Overshoot-Kompensation: gelernter Ventil-Nachlauf zieht die
+            # Schliess-Schwelle vom Korridor-Max aufs ZIEL vor - das CO2
+            # landet nach dem Nachschieben auf dem Ziel statt bei co2_max.
+            co2_os = (ctx.num("co2_overshoot", 0.0)
+                      if ctx.sw("co2_overshoot_komp") else 0.0)
             if co2_betrieb == "Intervall":
                 iv = self.fan_interval("Intervall", ctx.num("co2_dauer_min", 5),
                                        ctx.num("co2_intervall_min", 30))
                 want = iv and co2 < co2_max
                 co2_on = self.latch("co2", want, not want)
                 co2_note = " [Intervall]"
+            elif co2_os > 0:
+                # AN bei zu wenig (unter Ziel-Tol), AUS wenn co2 + Nachlauf
+                # das Ziel erreicht -> Ventil schliesst frueher.
+                co2_aus = co2_ziel - co2_os
+                co2_on = self.latch("co2", co2 <= co2_min,
+                                    co2 >= co2_aus)
+                co2_note = " [Dauer, Nachlauf %.0f]" % co2_os
             else:
                 co2_on = self.latch("co2", co2 <= co2_min, co2 >= co2_max)
                 co2_note = " [Dauer]"
@@ -1010,6 +1061,13 @@ class Regler:
                     co2_note = " [Max-Laufzeit -> Pause]"
             else:
                 self._last_sw["co2_on_start"] = 0
+
+        # CO2-Ventil-Nachlauf lernen (nur bei aktiver Dosierung, Dauer-Modus)
+        self.co2_overshoot_lernen(
+            ctx, co2, co2_on,
+            bool(d_co2 and co2 is not None and co2_auto and ist_tag
+                 and co2_betrieb != "Intervall"),
+            bias_out)
 
         # -- Ventilator / Umluft --
         vent_mode = ctx.sel_raw("ventilator_modus") or "Dauerbetrieb"
