@@ -40,6 +40,10 @@ class Regler:
         self._ent_since = 0.0    # seit wann laeuft der Entfeuchter durch
         self._dry_prev = False
         self._dry_cooldown = 0.0
+        # Trocken-Schutz (fan_only bei zu trocken): Dauer + Wiederanlauf
+        self._trock_since = 0.0  # seit wann VPD ueber Korridor-Max
+        self._fan_prev = False
+        self._fan_cooldown = 0.0
         # CO2-Overshoot-Lernen (Ventil-Nachlauf nach dem Schliessen)
         self._co2_prev = False
         self._co2_os_start = 0.0
@@ -930,6 +934,50 @@ class Regler:
             self._ent_since = 0.0
             self._dry_prev = False
             dry_assist = self.latch("kdryassist", False, True)
+
+        # Trocken-Schutz (Spiegel des Feuchte-Assists): laeuft der VPD ueber
+        # den Korridor (zu trocken), waehrend die AC gerade KONDENSIERT
+        # (Kompressor an -> sie trocknet zusaetzlich) UND die Temperatur
+        # noch Luft nach oben hat, wird die AC kurz auf fan_only gesetzt -
+        # sie kuehlt/trocknet dann NICHT mehr mit, die Restfeuchte erholt
+        # sich, der VPD kommt flacher zurueck (Users Beobachtung: "im Fan
+        # kuehlt sie nicht"). Terps-Schutz: nur solange Temp < Ziel + max
+        # 1 °C; Rueckgabe sobald VPD zurueck im Korridor ODER Temp die
+        # Grenze erreicht (dann hat Kuehlen Vorrang). Gleiche Sicherungen
+        # wie der Feuchte-Assist: Dauerbedingung, Mindestzeit, Cooldown.
+        if (ctx.sw("klima_fan_protect") and klima_is_climate
+                and "fan_only" in klima_modes
+                and eff_modus == "VPD" and vpd is not None):
+            now_fp = time.time()
+            if vpd_g >= vpd_max:
+                if not self._trock_since:
+                    self._trock_since = now_fp
+            else:
+                self._trock_since = 0.0
+            trock_lang = (self._trock_since
+                          and now_fp - self._trock_since >= 300.0)
+            try:
+                rt_wf = float(ctx.attr(d_klima, "realtime_power"))
+            except (TypeError, ValueError):
+                rt_wf = None
+            k_aktiv = rt_wf is not None and rt_wf >= 250.0
+            temp_room = (temp is not None
+                         and temp < ziel_temp + min(temp_tol, 1.0))
+            notfall_t = (vpd_g >= vpd_max + 0.05 and vpd >= vpd_max
+                         and trock_lang and k_aktiv and temp_room
+                         and now_fp >= self._fan_cooldown)
+            fan_protect = self.latch(
+                "kfanprotect", notfall_t,
+                vpd_g <= vpd_max - nz or not temp_room,
+                min_s=klima_min_s)
+            if self._fan_prev and not fan_protect:
+                self._fan_cooldown = now_fp + 1200.0
+            self._fan_prev = fan_protect
+        else:
+            self._trock_since = 0.0
+            self._fan_prev = False
+            fan_protect = self.latch("kfanprotect", False, True)
+
         if ctrl_temp is not None:
             kcool = self.latch("kcool", ctrl_temp >= klima_ziel_eff + temp_tol, ctrl_temp <= klima_ziel_eff)
             kheat = self.latch("kheat", ctrl_temp <= klima_ziel_eff - temp_tol, ctrl_temp >= klima_ziel_eff)
@@ -938,7 +986,9 @@ class Regler:
             kheat = self.latch("kheat", False, True)
         aktiv_mode = "off"
         if d_klima:
-            if kcool:
+            if fan_protect and "fan_only" in klima_modes:
+                aktiv_mode = "fan_only"   # zu trocken -> nicht mitkuehlen
+            elif kcool:
                 aktiv_mode = "cool"
             elif klima_is_climate and kheat and not heiz_da and "heat" in klima_modes:
                 aktiv_mode = "heat"
@@ -951,10 +1001,13 @@ class Regler:
 
         if klima_sm == "Autonom":
             klima_mode = spiegel
-            # Feuchte-Not-Assist uebersteuert den Spiegel-Modus (nur wenn
-            # die AC ueberhaupt an sein soll)
+            # Feuchte-Not-Assist / Trocken-Schutz uebersteuern den Spiegel-
+            # Modus (nur wenn die AC ueberhaupt an sein soll). Beide
+            # schliessen sich aus (VPD nicht zugleich unter Min und ueber Max).
             if dry_assist and spiegel != "off":
                 klima_mode = "dry"
+            elif fan_protect and spiegel != "off" and "fan_only" in klima_modes:
+                klima_mode = "fan_only"
             # Bei VPD->Temp-Kopplung gilt auch im Autonom-Modus das dynamische
             # Ziel (sonst das manuelle AC-Ziel Tag/Nacht).
             klima_target = (round(klima_ziel_eff, 1) if vpd_temp_kopplung
@@ -1173,6 +1226,8 @@ class Regler:
                    "auto": "Auto"}.get(klima_mode, klima_mode)
             if klima_mode == "dry" and dry_assist:
                 _ml = "Feuchte-Assist"
+            elif klima_mode == "fan_only" and fan_protect:
+                _ml = "Trocken-Schutz"
             _tgt = " @ %.1fC" % klima_target if klima_mode in ("cool", "heat", "auto") else ""
             shadow["klima"] = "[%s/%s] %s (%s%s, fan %s) -> %s%s" % (
                 _live, _sm, klima_mode.upper(), _ml, _tgt, klima_fan_eff, d_klima, klima_acted)

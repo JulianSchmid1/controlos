@@ -957,6 +957,8 @@ function klimaView(a) {
         V(bsel(sp + "klima_modus_nacht", "AC-Modus Nacht"), cOn(wp + "vorhanden_klima")),
         V(bsw(wp + "klima_dry_assist", "AC-Feuchte-Assist (dry bei Feuchte-Not)"),
           cOn(wp + "vorhanden_klima"), cOn(wp + "vorhanden_entfeuchter")),
+        V(bsw(wp + "klima_fan_protect", "AC-Trocken-Schutz (fan_only wenn zu trocken)"),
+          cOn(wp + "vorhanden_klima")),
         V(bsel(sp + "klima_fan_tag", "AC-Lüfter Tag"), cOn(wp + "vorhanden_klima"),
           cEq(sp + "klima_steuermodus", "Autonom")),
         V(bsel(sp + "klima_fan_nacht", "AC-Lüfter Nacht"), cOn(wp + "vorhanden_klima"),
