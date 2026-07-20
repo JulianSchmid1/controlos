@@ -914,7 +914,11 @@ class Regler:
             except (TypeError, ValueError):
                 rt_w = None
             k_idle = rt_w is not None and rt_w < 250.0
-            temp_ok = temp is not None and temp > ziel_temp - 1.0
+            # Temp-Spielraum = die eingestellte Toleranz (nicht enger): der
+            # Assist bleibt aktiv, bis der VPD wieder im Korridor ist,
+            # solange die Temp die Toleranz nicht verlaesst. Wird sie
+            # erreicht, hat Kuehlen/Temperatur Vorrang.
+            temp_ok = temp is not None and temp > ziel_temp - temp_tol
             notfall = (vpd_g <= vpd_min - 0.05 and vpd <= vpd_min
                        and lauf_lang and k_idle and temp_ok
                        and now_da >= self._dry_cooldown)
@@ -961,8 +965,8 @@ class Regler:
             except (TypeError, ValueError):
                 rt_wf = None
             k_aktiv = rt_wf is not None and rt_wf >= 250.0
-            temp_room = (temp is not None
-                         and temp < ziel_temp + min(temp_tol, 1.0))
+            # Temp-Spielraum nach oben = volle Toleranz (siehe Feuchte-Assist)
+            temp_room = temp is not None and temp < ziel_temp + temp_tol
             notfall_t = (vpd_g >= vpd_max + 0.05 and vpd >= vpd_max
                          and trock_lang and k_aktiv and temp_room
                          and now_fp >= self._fan_cooldown)
