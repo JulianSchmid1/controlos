@@ -1043,8 +1043,13 @@ class Regler:
                 co2_note = " [Intervall]"
             elif co2_os > 0:
                 # AN bei zu wenig (unter Ziel-Tol), AUS wenn co2 + Nachlauf
-                # das Ziel erreicht -> Ventil schliesst frueher.
-                co2_aus = co2_ziel - co2_os
+                # das Ziel erreicht -> Ventil schliesst frueher. Die AUS-
+                # Schwelle MUSS ueber der AN-Schwelle bleiben (sonst kippt
+                # die Hysterese: os >= Toleranz wuerde AUS unter AN druecken
+                # -> Latch haengt). Gap >= 25 ppm; nach oben auf co2_max
+                # gedeckelt.
+                co2_aus = max(co2_min + 25.0,
+                              min(co2_max, co2_ziel - co2_os))
                 co2_on = self.latch("co2", co2 <= co2_min,
                                     co2 >= co2_aus)
                 co2_note = " [Dauer, Nachlauf %.0f]" % co2_os
